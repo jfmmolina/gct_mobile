@@ -32,6 +32,29 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // --- COPIAR DESDE AQUÍ ---
+          Container(
+          width: double.infinity,
+          padding: EdgeInsets.all(15),
+          margin: EdgeInsets.only(bottom: 20),
+          decoration: BoxDecoration(
+          color: Colors.blue[900], // Fondo azul oscuro institucional
+          borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+          Text("EMPRESA TRANSPORTADORA:", 
+          style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold)),
+          SizedBox(height: 5),
+          Text(
+          "${widget.datosServidor['empresa_transportadora'] ?? 'SIN EMPRESA ASIGNADA'}", 
+          style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)
+          ),
+          ],
+          ),
+          ),
+          // --- HASTA AQUÍ ---             
             Text("Hola, ${widget.datosServidor['nombre']}", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             Divider(),
             

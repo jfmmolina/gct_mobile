@@ -49,7 +49,9 @@ class _LoginPageState extends State<LoginPage> {
         });
         Future.delayed(const Duration(seconds: 2), () {
           if (!mounted) return;
-          Navigator.push(context, MaterialPageRoute(builder: (context) => ValidacionViajePage(datosServidor: datos)));
+          Navigator.push(
+            context, 
+            MaterialPageRoute(builder: (context) => ValidacionViajePage(datosServidor: datos)));
         });
       }
     } catch (e) {
