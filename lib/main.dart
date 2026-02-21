@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:async'; // <--- IMPORTANTE PARA EL MOVIMIENTO
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'validacion_page.dart';
 
 void main() {
   runApp(const GCTMobileApp());
@@ -48,7 +49,7 @@ class _LoginPageState extends State<LoginPage> {
         });
         Future.delayed(const Duration(seconds: 2), () {
           if (!mounted) return;
-          Navigator.push(context, MaterialPageRoute(builder: (context) => DashboardPage(lat: _latitudActual, lng: _longitudActual)));
+          Navigator.push(context, MaterialPageRoute(builder: (context) => ValidacionViajePage(datosServidor: datos)));
         });
       }
     } catch (e) {
@@ -115,6 +116,7 @@ class _DashboardPageState extends State<DashboardPage> {
   Future<void> _actualizarUbicacion() async {
     try {
       final respuesta = await http.get(Uri.parse('https://terminals-sight-miscellaneous-pointing.trycloudflare.com/api/test?t=${DateTime.now().millisecondsSinceEpoch}'));
+      //final respuesta = await http.get(Uri.parse('https://thought-tattoo-nobody-lbs.trycloudflare.com/api/test'));
       if (respuesta.statusCode == 200) {
         final datos = json.decode(respuesta.body);
         if (mounted) {
