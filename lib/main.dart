@@ -5,22 +5,13 @@ import 'dart:async'; // <--- IMPORTANTE PARA EL MOVIMIENTO
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'validacion_page.dart';
+import 'setup_page.dart'; 
 
 void main() {
-  runApp(const GCTMobileApp());
-}
-
-class GCTMobileApp extends StatelessWidget {
-  const GCTMobileApp({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'GCT Mobile Real',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(primarySwatch: Colors.blue, useMaterial3: true),
-      home: const LoginPage(),
-    );
-  }
+  runApp( const MaterialApp(
+    debugShowCheckedModeBanner: false, // Esto quita la etiqueta roja de "debug"
+    home:  SetupPage(), 
+  ));
 }
 
 class LoginPage extends StatefulWidget {
@@ -38,8 +29,7 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _conectarConServidor() async {
     setState(() { _mensajeServidor = "Conectando a Linux..."; });
     try {
-      // Borra la anterior y pega esta nueva:
-      final respuesta = await http.get(Uri.parse('https://terminals-sight-miscellaneous-pointing.trycloudflare.com/api/test'));
+      final respuesta = await http.get(Uri.parse('https://terminals-sight-miscellaneous-pointing.trycloudflare.com/api/test?t=${_cedulaController.text}'));
       if (respuesta.statusCode == 200) {
         final datos = json.decode(respuesta.body);
         setState(() {
