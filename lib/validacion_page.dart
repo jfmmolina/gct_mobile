@@ -29,6 +29,9 @@
     String _longitudActual = "0.0";
 
     bool _procesandoFoto = false; // 👈 NUEVO: Nuestro candado de seguridad
+    
+    bool _subiendoViaje = false;  // 👈 NUEVO: Muestra que está cargando
+    bool _viajeExitoso = false;   // 👈 NUEVO: Bloquea el botón al terminar
 
     // --- FUNCIÓN DE CAPTURA DE FOTO ---
     
@@ -140,77 +143,67 @@
 
 
 
- Future<void> _subirEvidencias() async {
-    String? urlPublicaFinal; // Aquí guardaremos todos los links unidos
+  Future<void> _subirEvidencias() async {
+    String? urlPublicaFinal; 
 
-    // 1. BANNER NARANJA: Le avisa al usuario que no debe tocar nada
+    // 🔒 1. CERRAMOS EL CANDADO DE CARGA
+    setState(() {
+      _subiendoViaje = true;
+    });
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("⏳ Subiendo evidencias a la nube..."), backgroundColor: Colors.orange)
     );
 
     try {
-      // A. SUBIR A FIREBASE PRIMERO (CICLO PARA TODAS LAS FOTOS)
+      // A. SUBIR A FIREBASE
       if (_listaFotos.isNotEmpty) {
-        List<String> linksGenerados = []; // Lista temporal para guardar los links
-
-        // Recorremos la lista de fotos (1 a 4 fotos)
+        List<String> linksGenerados = []; 
         for (int i = 0; i < _listaFotos.length; i++) {
           File archivo = _listaFotos[i];
-          // Le agregamos "_$i" al final del nombre para no sobreescribir en Firebase
           String nombreArchivo = "viaje_${widget.datosServidor['placa_cabezote']}_${DateTime.now().millisecondsSinceEpoch}_$i.jpg";
           Reference ref = FirebaseStorage.instance.ref().child('evidencias/$nombreArchivo');
           
           final imageBytes = await archivo.readAsBytes();
-          
-          UploadTask uploadTask = ref.putData(
-            imageBytes, 
-            SettableMetadata(contentType: 'image/jpeg')
-          );
+          UploadTask uploadTask = ref.putData(imageBytes, SettableMetadata(contentType: 'image/jpeg'));
           
           TaskSnapshot snapshot = await uploadTask.timeout(const Duration(seconds: 45));
           String urlTemp = await snapshot.ref.getDownloadURL();
-          linksGenerados.add(urlTemp); // Guardamos el link
+          linksGenerados.add(urlTemp); 
           print("✅ Foto ${i + 1} subida a Firebase: $urlTemp");
         }
-
-        // Unimos todos los links separados por una coma y un espacio
         urlPublicaFinal = linksGenerados.join(", ");
       }
 
-      // B. GUARDAR TODO EN CONTABO (PostgreSQL)
+      // B. GUARDAR EN CONTABO
       final conn = await Connection.open(
-        Endpoint(
-          host: 'gctsatelital.com',
-          database: 'app_core',
-          username: 'flutter',
-          password: '5cxkdu6lo', 
-          port: 5432,
-        ),
+        Endpoint(host: 'gctsatelital.com', database: 'app_core', username: 'flutter', password: '5cxkdu6lo', port: 5432),
         settings: const ConnectionSettings(sslMode: SslMode.disable, connectTimeout: Duration(seconds: 45)),
       );
 
       await conn.execute(
         r'INSERT INTO flutter_schema.viajes (guia, odometro, celular, trailer, placa_cabezote, foto_evidencia, latitud, longitud) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
         parameters: [
-          _guiaController.text,
-          _odometroController.text,
-          widget.datosServidor['celular']?.toString()??"",
-          widget.datosServidor['placa_trailer']?.toString()??"",
-          widget.datosServidor['placa_cabezote']?.toString()??"",
-          urlPublicaFinal, // 👈 Enviamos el mega-texto con todos los links
-          _latitudActual,
-          _longitudActual,
+          _guiaController.text, _odometroController.text, widget.datosServidor['celular']?.toString()??"",
+          widget.datosServidor['placa_trailer']?.toString()??"", widget.datosServidor['placa_cabezote']?.toString()??"",
+          urlPublicaFinal, _latitudActual, _longitudActual,
         ],
       );
-
       await conn.close();
 
       if (!mounted) return;
-      // 4. BANNER AZUL DE ÉXITO
+      
       ScaffoldMessenger.of(context).hideCurrentSnackBar(); 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("✅ ¡Viaje y Fotos sincronizados exitosamente!"), backgroundColor: Colors.blue)
       );
+
+      // 🔒 2. ÉXITO TOTAL: BLOQUEAMOS EL BOTÓN PARA SIEMPRE
+      setState(() {
+        _subiendoViaje = false;
+        _viajeExitoso = true; 
+      });
+
     } catch (e) {
       print("❌ Error total: $e");
       if (!mounted) return;
@@ -218,6 +211,11 @@
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("❌ Error de red: $e"), backgroundColor: Colors.red)
       );
+      
+      // 🔓 3. SI HAY ERROR, ABRIMOS EL CANDADO PARA QUE PUEDA REINTENTAR
+      setState(() {
+        _subiendoViaje = false; 
+      });
     }
   }
 
@@ -375,29 +373,25 @@
                 ),
               ),
               const SizedBox(height: 30),
+
               // Botón de Inicio
               SizedBox(
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                  onPressed: (_guiaController.text.isNotEmpty && _odometroController.text.isNotEmpty)
+                  style: ElevatedButton.styleFrom(
+                    // Si ya se envió, se pone gris. Si no, verde.
+                    backgroundColor: _viajeExitoso ? Colors.grey : Colors.green
+                  ),
+                  // Si está cargando, o ya fue exitoso, o le faltan datos, bloqueamos el botón (null)
+                  onPressed: (_guiaController.text.isNotEmpty && _odometroController.text.isNotEmpty && !_subiendoViaje && !_viajeExitoso)
                     ? () {
-                        // 1. Capturamos lo que el conductor escribió
                         int odoNuevo = int.tryParse(_odometroController.text) ?? 0;
-                        
-                        // 2. Capturamos el valor que el sistema ya conoce del servidor
-                        // Cambiamos 'odometro_actual' por el nombre exacto que venga de tu DB
-                        //int odoBaseDatos = int.tryParse(widget.datosServidor['odometro_actual'].toString()) ?? 0;
                         int odoBaseDatos = 123456789;
 
-                        print("Comparando: Nuevo ($odoNuevo) vs Base de Datos ($odoBaseDatos)");
-
-                        // 3. LA REGLA DE ORO: Solo si el nuevo es estrictamente MAYOR
                         if (odoNuevo > odoBaseDatos) {
                           _subirEvidencias();
                         } else {
-                          // Bloqueo inmediato si el valor es menor o igual
                           showDialog(
                             context: context,
                             builder: (context) => AlertDialog(
@@ -410,11 +404,16 @@
                           );
                         }
                       }
-                    : null, // Si los campos están vacíos, el botón se apaga
-                  child: const Text("INICIAR VIAJE", 
-                    style: TextStyle(color: Colors.white, fontSize: 18)),
-                ), // Cierra ElevatedButton
-              ), // Cierra SizedBox
+                    : null, 
+                  // Cambiamos el contenido del botón dependiendo de su estado
+                  child: _subiendoViaje 
+                    ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : Text(
+                        _viajeExitoso ? "VIAJE INICIADO ✓" : "INICIAR VIAJE", 
+                        style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)
+                      ),
+                ),
+              ),
             ], // Cierra Column
           ), // Cierra Column
         ), // Cierra SingleChildScrollView
