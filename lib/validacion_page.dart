@@ -23,139 +23,125 @@
     final TextEditingController _odometroController = TextEditingController();
     int _fotosTomadas = 0;
     final int _limiteFotos = 4;
-    File? _fotoArchivo; // Para guardar la referencia a la imagen
+    List<File> _listaFotos = []; // 👈 NUEVO: Lista para guardar todas las fotos
     Position? position;
     String _latitudActual = "0.0";
     String _longitudActual = "0.0";
 
+    bool _procesandoFoto = false; // 👈 NUEVO: Nuestro candado de seguridad
+
     // --- FUNCIÓN DE CAPTURA DE FOTO ---
     
     Future<void> _tomarFotoReal() async {
-      // 1. Validar el límite de 4 fotos
+      // 1. Candado de seguridad: Si ya está procesando una foto, ignorar el toque
+      if (_procesandoFoto) return;
+
+      // 2. Validar el límite de 4 fotos
       if (_fotosTomadas >= _limiteFotos) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("⚠️ Límite de 4 fotos alcanzado"),
-            backgroundColor: Colors.orange,
-          ),
+          const SnackBar(content: Text("⚠️ Límite de 4 fotos alcanzado"), backgroundColor: Colors.orange),
         );
         return;
       }
 
-      final ImagePicker picker = ImagePicker();
-      //Position? position; para remover
+      // 3. 🔒 CERRAMOS EL CANDADO antes de empezar
+      setState(() {
+        _procesandoFoto = true;
+      });
 
-    try {
-        // 1. REVISAR PERMISOS DE GPS EN PANTALLA
+      // Envolvemos todo en un Try-Finally para asegurar que el candado siempre se abra
+      try {
+        final ImagePicker picker = ImagePicker();
+
+        // --- 📍 INICIO BLOQUE GPS ---
         LocationPermission permiso = await Geolocator.checkPermission();
         if (permiso == LocationPermission.denied) {
-          permiso = await Geolocator.requestPermission(); // Muestra el cartelito al usuario
+          permiso = await Geolocator.requestPermission(); 
         }
 
-        // 2. SOLO SI DIO PERMISO, BUSCAMOS EL SATÉLITE
         if (permiso == LocationPermission.whileInUse || permiso == LocationPermission.always) {
-          
-          // Le damos 10 segundos en lugar de 5 para asegurar que lo encuentre
           position = await Geolocator.getCurrentPosition(
             desiredAccuracy: LocationAccuracy.high,
             timeLimit: const Duration(seconds: 10), 
           );
-          
           if (position != null) {
             setState(() {
               _latitudActual = position!.latitude.toStringAsFixed(6);
               _longitudActual = position!.longitude.toStringAsFixed(6);
             });
-            print("📍 EXITO GPS: Lat $_latitudActual, Lon $_longitudActual"); // Para verlo en consola
           }
-        } else {
-          print("⚠️ El conductor no dio permiso de GPS.");
         }
+        // --- FIN BLOQUE GPS ---
 
-      } catch (e) {
-        debugPrint("⏳ El GPS tardó mucho o falló: $e");
-      }
+        // --- 📸 INICIO BLOQUE CAMARA ---
+        final XFile? foto = await picker.pickImage(
+          source: ImageSource.camera,
+          preferredCameraDevice: CameraDevice.rear,
+          imageQuality: 85,
+          maxWidth: 1000,
+          maxHeight: 1000,
+          requestFullMetadata: false, 
+        );
 
-      // 3. Abrir la cámara
-      final XFile? foto = await picker.pickImage(
-        source: ImageSource.camera,
-        preferredCameraDevice: CameraDevice.rear,
-        imageQuality: 85,
-        maxWidth: 1000,
-        maxHeight: 1000,
-        requestFullMetadata: false, // Compresión para que no pesen tanto en Contabo
-      );
+        if (foto != null) {
+          final bytes = await foto.readAsBytes();
+          final tempDir = await getTemporaryDirectory();
+          final directory = await getApplicationDocumentsDirectory();
 
-      if (foto != null) {
-        // 1. Rescate inmediato de bytes (Sin usar variables intermedias peligrosas)
+          final File archivoRescatado = File('${tempDir.path}/evidencia_temp.jpg');
+          img.Image? imagenDecodificada = img.decodeImage(bytes);
 
-        final bytes = await foto.readAsBytes();
-        
-        final tempDir = await getTemporaryDirectory();
-        final directory = await getApplicationDocumentsDirectory();
+          if (imagenDecodificada != null) {
+            String fechaHora = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
+            String marcaDeAgua = "FECHA: $fechaHora | GPS: $_latitudActual, $_longitudActual";
 
-        // 🚀 2. NUEVO: MAGIA PARA ESTAMPAR LA FOTO
-        final File archivoRescatado = File('${tempDir.path}/evidencia_temp.jpg');
-        
-        // Decodificamos la foto en la memoria
-        img.Image? imagenDecodificada = img.decodeImage(bytes);
+            img.drawString(
+              imagenDecodificada, marcaDeAgua, font: img.arial24,
+              x: 20, y: imagenDecodificada.height - 40, color: img.ColorRgb8(255, 255, 0), 
+            );
 
-        if (imagenDecodificada != null) {
-          // Preparamos el texto (Fecha, Hora y GPS)
-          String fechaHora = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
-          String marcaDeAgua = "FECHA: $fechaHora | GPS: $_latitudActual, $_longitudActual";
+            List<int> bytesEstampados = img.encodeJpg(imagenDecodificada, quality: 90);
+            await archivoRescatado.writeAsBytes(bytesEstampados);
+          } else {
+            await archivoRescatado.writeAsBytes(bytes);
+          }
 
-          // Dibujamos el texto sobre la foto (Letra amarilla, abajo a la izquierda)
-          img.drawString(
-            imagenDecodificada,
-            marcaDeAgua,
-            font: img.arial24,
-            x: 20, // Margen izquierdo
-            y: imagenDecodificada.height - 40, // Margen inferior
-            color: img.ColorRgb8(255, 255, 0), // 255, 255, 0 es color Amarillo
+          String placa = "GCT-001";
+          String fecha = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+          String lat = position?.latitude.toStringAsFixed(4) ?? "0.0000";
+          String lon = position?.longitude.toStringAsFixed(4) ?? "0.0000";
+          String nuevoNombre = "${placa}_${fecha}_Lat${lat}_Lon$lon.jpg";
+          String nuevaRuta = "${directory.path}/$nuevoNombre";
+
+          await archivoRescatado.copy(nuevaRuta);
+
+          if (mounted) {
+            setState(() {
+              _listaFotos.add(File(nuevaRuta)); 
+              _fotosTomadas++;
+            });
+          }
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("✅ Foto $_fotosTomadas de $_limiteFotos guardada"), backgroundColor: Colors.green),
           );
-
-          // Volvemos a empaquetar la foto ya con el texto estampado
-          List<int> bytesEstampados = img.encodeJpg(imagenDecodificada, quality: 90);
-          await archivoRescatado.writeAsBytes(bytesEstampados);
-        } else {
-          // Si falla la estampa por alguna razón, guarda la foto original
-          await archivoRescatado.writeAsBytes(bytes);
-          print("❌ ERROR: La librería no pudo leer la foto para estamparla");
         }
-        
-
-        // 3. Preparamos la ruta técnica
-        String placa = "GCT-001"; 
-        String fecha = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
-        String lat = position?.latitude.toStringAsFixed(4) ?? "0.0000";
-        String lon = position?.longitude.toStringAsFixed(4) ?? "0.0000";
-        String nuevoNombre = "${placa}_${fecha}_Lat${lat}_Lon$lon.jpg";
-        String nuevaRuta = "${directory.path}/$nuevoNombre";
-
-        // 4. COPIA SEGURA: Usamos la variable local 'archivoRescatado' (NUNCA _fotoArchivo!)
-        await archivoRescatado.copy(nuevaRuta);
-        debugPrint("📸 EVIDENCIA TECNICA: $nuevoNombre");
-
-        // 5. ACTUALIZACIÓN DE ESTADO: Aquí es donde el botón se pone verde fuerte
+      } catch (e) {
+        debugPrint("❌ Error al tomar foto: $e");
+      } finally {
+        // 4. 🔓 ABRIMOS EL CANDADO pase lo que pase
         if (mounted) {
           setState(() {
-            _fotoArchivo = archivoRescatado; // Aquí le damos el valor final
-            _fotosTomadas++;
+            _procesandoFoto = false;
           });
         }
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("✅ Foto $_fotosTomadas de $_limiteFotos guardada"),
-            backgroundColor: Colors.green,
-          ),
-        );
       }
     }
 
+
+
  Future<void> _subirEvidencias() async {
-    String? urlPublica;
+    String? urlPublicaFinal; // Aquí guardaremos todos los links unidos
 
     // 1. BANNER NARANJA: Le avisa al usuario que no debe tocar nada
     ScaffoldMessenger.of(context).showSnackBar(
@@ -163,28 +149,33 @@
     );
 
     try {
+      // A. SUBIR A FIREBASE PRIMERO (CICLO PARA TODAS LAS FOTOS)
+      if (_listaFotos.isNotEmpty) {
+        List<String> linksGenerados = []; // Lista temporal para guardar los links
 
-      // A. SUBIR A FIREBASE PRIMERO
-      if (_fotoArchivo != null) {
-        File archivo = _fotoArchivo!;
-        String nombreArchivo = "viaje_${widget.datosServidor['placa_cabezote']}_${DateTime.now().millisecondsSinceEpoch}.jpg";
-        Reference ref = FirebaseStorage.instance.ref().child('evidencias/$nombreArchivo');
-        
-        // 🚀 EL TRUCO MAGISTRAL: Leer el archivo en Bytes (RAM) para saltar bloqueos de Android
-        final imageBytes = await archivo.readAsBytes();
-        
-        // 🚀 Usamos putData en lugar de putFile y le decimos que es una imagen JPEG
-        UploadTask uploadTask = ref.putData(
-          imageBytes, 
-          SettableMetadata(contentType: 'image/jpeg')
-        );
-        
-        // Mantenemos el timeout de protección
-        TaskSnapshot snapshot = await uploadTask.timeout(const Duration(seconds: 45));
-        urlPublica = await snapshot.ref.getDownloadURL();
-        print("✅ Foto subida a Firebase: $urlPublica");
+        // Recorremos la lista de fotos (1 a 4 fotos)
+        for (int i = 0; i < _listaFotos.length; i++) {
+          File archivo = _listaFotos[i];
+          // Le agregamos "_$i" al final del nombre para no sobreescribir en Firebase
+          String nombreArchivo = "viaje_${widget.datosServidor['placa_cabezote']}_${DateTime.now().millisecondsSinceEpoch}_$i.jpg";
+          Reference ref = FirebaseStorage.instance.ref().child('evidencias/$nombreArchivo');
+          
+          final imageBytes = await archivo.readAsBytes();
+          
+          UploadTask uploadTask = ref.putData(
+            imageBytes, 
+            SettableMetadata(contentType: 'image/jpeg')
+          );
+          
+          TaskSnapshot snapshot = await uploadTask.timeout(const Duration(seconds: 45));
+          String urlTemp = await snapshot.ref.getDownloadURL();
+          linksGenerados.add(urlTemp); // Guardamos el link
+          print("✅ Foto ${i + 1} subida a Firebase: $urlTemp");
+        }
+
+        // Unimos todos los links separados por una coma y un espacio
+        urlPublicaFinal = linksGenerados.join(", ");
       }
-
 
       // B. GUARDAR TODO EN CONTABO (PostgreSQL)
       final conn = await Connection.open(
@@ -195,7 +186,6 @@
           password: '5cxkdu6lo', 
           port: 5432,
         ),
-        // 3. Aumentamos el tiempo a 45 segundos por si la red del celular es lenta
         settings: const ConnectionSettings(sslMode: SslMode.disable, connectTimeout: Duration(seconds: 45)),
       );
 
@@ -207,7 +197,7 @@
           widget.datosServidor['celular']?.toString()??"",
           widget.datosServidor['placa_trailer']?.toString()??"",
           widget.datosServidor['placa_cabezote']?.toString()??"",
-          urlPublica, 
+          urlPublicaFinal, // 👈 Enviamos el mega-texto con todos los links
           _latitudActual,
           _longitudActual,
         ],
@@ -217,9 +207,9 @@
 
       if (!mounted) return;
       // 4. BANNER AZUL DE ÉXITO
-      ScaffoldMessenger.of(context).hideCurrentSnackBar(); // Borra el aviso naranja
+      ScaffoldMessenger.of(context).hideCurrentSnackBar(); 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("✅ ¡Viaje y Foto sincronizados exitosamente!"), backgroundColor: Colors.blue)
+        const SnackBar(content: Text("✅ ¡Viaje y Fotos sincronizados exitosamente!"), backgroundColor: Colors.blue)
       );
     } catch (e) {
       print("❌ Error total: $e");
@@ -232,7 +222,7 @@
   }
 
 
-  void _editarDato(String titulo, String campo) {
+  void _editarDato(String titulo, String campo) { 
     TextEditingController tempController = TextEditingController(
       // Si el dato no existe o es nulo, mostrará un espacio vacío en lugar de "null"
       text: widget.datosServidor[campo]?.toString() ?? ""
@@ -325,9 +315,14 @@
                             ),  
                             const SizedBox(width: 8),
                             ElevatedButton.icon(
-                              onPressed: _tomarFotoReal, //AQUI CONECTAMOS LA FUNCIÓN DE TOMAR FOTO
-                              icon: const Icon(Icons.camera_alt, size: 18),
-                              label: Text("Foto ($_fotosTomadas/$_limiteFotos)"), 
+                              // Si está procesando, apagamos el botón pasándole 'null'
+                              onPressed: _procesandoFoto ? null : _tomarFotoReal, 
+                              icon: _procesandoFoto 
+                                  // Muestra un circulito de carga si está procesando
+                                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                  // Muestra la cámara si está libre
+                                  : const Icon(Icons.camera_alt, size: 18),
+                              label: Text(_procesandoFoto ? "Procesando..." : "Foto ($_fotosTomadas/$_limiteFotos)"), 
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.blue[800],
                                 foregroundColor: Colors.white,

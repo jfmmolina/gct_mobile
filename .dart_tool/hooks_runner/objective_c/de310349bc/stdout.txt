@@ -1,0 +1,58 @@
+Running `(cd /Users/juanmolina/.pub-cache/hosted/pub.dev/objective_c-9.3.0/; TMPDIR=/var/folders/14/p0jy34x94cnbtnbcbydz_sqw0000gn/T/ PATH=/Users/juanmolina/.local/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/pmk/env/global/bin://Users/juanmolina/developer/flutter:/Users/juanmolina/developer/flutter/bin HOME=/Users/juanmolina /Users/juanmolina/developer/flutter/bin/cache/dart-sdk/bin/dart --packages=/Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/package_config.json /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/objective_c/de310349bc/hook.dill --config=/Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/objective_c/de310349bc/input.json )`.
+INFO: 2026-02-24 15:12:16.061475: Running `/Library/Developer/CommandLineTools/usr/bin/clang --version`.
+
+INFO: 2026-02-24 15:12:16.177001: Running `/Library/Developer/CommandLineTools/usr/bin/clang --version`.
+
+INFO: 2026-02-24 15:12:16.187740: Running: /Library/Developer/CommandLineTools/usr/bin/clang -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -target arm64-apple-darwin -mmacos-version-min=13 -c /Users/juanmolina/.pub-cache/hosted/pub.dev/objective_c-9.3.0/src/include/dart_api_dl.c -fpic -I src -o /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/src/include/dart_api_dl.c.o
+
+INFO: 2026-02-24 15:12:16.188001: Running: /Library/Developer/CommandLineTools/usr/bin/clang -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -target arm64-apple-darwin -mmacos-version-min=13 -c /Users/juanmolina/.pub-cache/hosted/pub.dev/objective_c-9.3.0/src/objective_c.c -fpic -I src -o /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/src/objective_c.c.o
+
+INFO: 2026-02-24 15:12:16.188119: Running: /Library/Developer/CommandLineTools/usr/bin/clang -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -target arm64-apple-darwin -mmacos-version-min=13 -c /Users/juanmolina/.pub-cache/hosted/pub.dev/objective_c-9.3.0/test/util.c -fpic -I src -o /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/test/util.c.o
+
+INFO: 2026-02-24 15:12:16.188218: Running: /Library/Developer/CommandLineTools/usr/bin/clang -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -target arm64-apple-darwin -mmacos-version-min=13 -x objective-c -fobjc-arc -c /Users/juanmolina/.pub-cache/hosted/pub.dev/objective_c-9.3.0/src/input_stream_adapter.m -fpic -I src -o /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/src/input_stream_adapter.m.o
+
+INFO: 2026-02-24 15:12:16.188301: Running: /Library/Developer/CommandLineTools/usr/bin/clang -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -target arm64-apple-darwin -mmacos-version-min=13 -x objective-c -fobjc-arc -c /Users/juanmolina/.pub-cache/hosted/pub.dev/objective_c-9.3.0/src/objective_c.m -fpic -I src -o /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/src/objective_c.m.o
+
+INFO: 2026-02-24 15:12:16.188452: Running: /Library/Developer/CommandLineTools/usr/bin/clang -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -target arm64-apple-darwin -mmacos-version-min=13 -x objective-c -fobjc-arc -c /Users/juanmolina/.pub-cache/hosted/pub.dev/objective_c-9.3.0/src/ns_number.m -fpic -I src -o /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/src/ns_number.m.o
+
+INFO: 2026-02-24 15:12:16.188525: Running: /Library/Developer/CommandLineTools/usr/bin/clang -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -target arm64-apple-darwin -mmacos-version-min=13 -x objective-c -fobjc-arc -c /Users/juanmolina/.pub-cache/hosted/pub.dev/objective_c-9.3.0/src/protocol.m -fpic -I src -o /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/src/protocol.m.o
+
+INFO: 2026-02-24 15:12:16.188764: Running: /Library/Developer/CommandLineTools/usr/bin/clang -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -target arm64-apple-darwin -mmacos-version-min=13 -x objective-c -fobjc-arc -c /Users/juanmolina/.pub-cache/hosted/pub.dev/objective_c-9.3.0/src/objective_c_bindings_generated.m -fpic -I src -o /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/src/objective_c_bindings_generated.m.o
+
+INFO: 2026-02-24 15:12:16.289349: 
+INFO: 2026-02-24 15:12:16.289442: 
+INFO: 2026-02-24 15:12:16.289467: Generated /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/src/objective_c.c.o
+INFO: 2026-02-24 15:12:16.289563: 
+INFO: 2026-02-24 15:12:16.289573: 
+INFO: 2026-02-24 15:12:16.289581: Generated /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/src/include/dart_api_dl.c.o
+
+INFO: 2026-02-24 15:12:16.295071: 
+INFO: 2026-02-24 15:12:16.295104: 
+INFO: 2026-02-24 15:12:16.295121: Generated /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/src/observer.m.o
+
+INFO: 2026-02-24 15:12:16.298659: 
+INFO: 2026-02-24 15:12:16.298693: 
+INFO: 2026-02-24 15:12:16.298703: Generated /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/src/protocol.m.o
+
+INFO: 2026-02-24 15:12:16.507904: 
+INFO: 2026-02-24 15:12:16.507938: 
+INFO: 2026-02-24 15:12:16.507947: Generated /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/src/ns_number.m.o
+
+INFO: 2026-02-24 15:12:16.513588: 
+INFO: 2026-02-24 15:12:16.513619: 
+INFO: 2026-02-24 15:12:16.513627: Generated /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/src/objective_c.m.o
+
+INFO: 2026-02-24 15:12:16.515438: 
+INFO: 2026-02-24 15:12:16.515459: 
+INFO: 2026-02-24 15:12:16.515469: Generated /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/src/input_stream_adapter.m.o
+
+INFO: 2026-02-24 15:12:16.525637: 
+INFO: 2026-02-24 15:12:16.525667: 
+INFO: 2026-02-24 15:12:16.525676: Generated /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/src/objective_c_bindings_generated.m.o
+
+INFO: 2026-02-24 15:12:16.525924: Running: /Library/Developer/CommandLineTools/usr/bin/clang -shared -Wl,-encryptable -undefined dynamic_lookup -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -target arm64-apple-darwin -mmacos-version-min=13 /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/src/include/dart_api_dl.c.o /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/src/objective_c.c.o /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/test/util.c.o /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/src/input_stream_adapter.m.o /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/src/objective_c.m.o /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/src/observer.m.o /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/src/ns_number.m.o /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/src/protocol.m.o /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/obj/src/objective_c_bindings_generated.m.o -o /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/objective_c.dylib
+
+INFO: 2026-02-24 15:12:16.661753: 
+INFO: 2026-02-24 15:12:16.661805: 
+INFO: 2026-02-24 15:12:16.661816: Generated /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/hooks_runner/shared/objective_c/build/de310349bc/objective_c.dylib
+
