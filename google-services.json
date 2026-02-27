@@ -1,0 +1,29 @@
+{
+    "project_info": {
+        "project_number": "1070346872466",
+        "project_id": "gct-gps-juan-3a3b3",
+        "storage_bucket": "gct-gps-juan-3a3b3.firebasestorage.app"
+    },
+    "client": [
+        {
+            "client_info": {
+                "mobilesdk_app_id": "1:1070346872466:android:281e83af2072b1d22fa84b",
+                "android_client_info": {
+                    "package_name": "com.example.gct_mobile"
+                }
+            },
+            "oauth_client": [],
+            "api_key": [
+                {
+                    "current_key": "AIzaSyD9lazVSrsL2810llOy2NOHhPbyMSKmJzU"
+                }
+            ],
+            "services": {
+                "appinvite_service": {
+                    "other_platform_oauth_client": []
+                }
+            }
+        }
+    ],
+    "configuration_version": "1"
+}

@@ -1,3 +1,4 @@
+import 'firebase_options.dart'; // 👈 Agrega esta línea al inicio 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -6,11 +7,15 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'validacion_page.dart';
 import 'setup_page.dart'; 
+import 'package:firebase_core/firebase_core.dart';
 
-void main() {
-  runApp( const MaterialApp(
-    debugShowCheckedModeBanner: false, // Esto quita la etiqueta roja de "debug"
-    home:  SetupPage(), 
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized(); // Prepara el motor de Flutter
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform,);            // Conecta con tu google-services.json
+  
+  runApp(const MaterialApp(
+    debugShowCheckedModeBanner: false,      // Quita la etiqueta roja de "debug"
+    home: SetupPage(),                      // Arranca en la página de Setup
   ));
 }
 

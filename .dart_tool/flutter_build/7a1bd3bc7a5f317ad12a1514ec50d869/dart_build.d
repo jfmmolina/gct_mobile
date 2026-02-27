@@ -1,0 +1,1 @@
+ /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/flutter_build/7a1bd3bc7a5f317ad12a1514ec50d869/dart_build_result.json:  /Users/juanmolina/developer/flutter/bin/cache/dart-sdk/version /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/package_config.json /Users/juanmolina/developer/proyectos_apps/gct_mobile/pubspec.yaml
