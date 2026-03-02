@@ -7,6 +7,7 @@
   import 'package:image_picker/image_picker.dart'; //TOMAR FOTO 
   import 'package:flutter/material.dart';
   import 'package:image/image.dart' as img; // 👈 NUEVO: Herramienta para estampar
+  import 'package:url_launcher/url_launcher.dart'; // 👈 NUEVO: Para abrir el mapa
 
 
   class ValidacionViajePage extends StatefulWidget {
@@ -143,19 +144,19 @@
 
 
 
-  Future<void> _subirEvidencias() async {
-    String? urlPublicaFinal; 
+    Future<void> _subirEvidencias() async {
+      String? urlPublicaFinal; 
 
-    // 🔒 1. CERRAMOS EL CANDADO DE CARGA
-    setState(() {
+      // 🔒 1. CERRAMOS EL CANDADO DE CARGA
+      setState(() {
       _subiendoViaje = true;
-    });
+      });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("⏳ Subiendo evidencias a la nube..."), backgroundColor: Colors.orange)
-    );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("⏳ Subiendo evidencias a la nube..."), backgroundColor: Colors.orange)
+      );
 
-    try {
+      try {
       // A. SUBIR A FIREBASE
       if (_listaFotos.isNotEmpty) {
         List<String> linksGenerados = []; 
@@ -204,7 +205,7 @@
         _viajeExitoso = true; 
       });
 
-    } catch (e) {
+      } catch (e) {
       print("❌ Error total: $e");
       if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -216,6 +217,52 @@
       setState(() {
         _subiendoViaje = false; 
       });
+    }
+  }
+
+  Future<void> _abrirMapaRuta() async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("⏳ Buscando mapa de ruta..."), backgroundColor: Colors.orange)
+    );
+
+    try {
+      final conn = await Connection.open(
+        Endpoint(
+          host: 'gctsatelital.com', database: 'app_core', username: 'flutter', password: '5cxkdu6lo', port: 5432,
+        ),
+        settings: const ConnectionSettings(sslMode: SslMode.disable, connectTimeout: Duration(seconds: 15)),
+      );
+
+      // ⚠️ NOTA PARA JUAN: Asegúrate de que el nombre de la columna sea correcto (ej. "share_url" o "link_mapa")
+      // Aquí estamos buscando en la tabla 'active_trips' usando la placa del cabezote como filtro.
+      
+      final result = await conn.execute(
+        r'SELECT mapa_iframe_url FROM flutter_schema.active_trips WHERE mapa_iframe_url IS NOT NULL LIMIT 1',
+      );
+
+      await conn.close();
+
+      if (result.isNotEmpty && result[0][0] != null) {
+        String urlMapa = result[0][0].toString();
+        final Uri url = Uri.parse(urlMapa);
+        
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        
+        // Abrimos el link en el navegador nativo del celular
+        if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+          throw 'No se pudo abrir el enlace';
+        }
+      } else {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("⚠️ El mapa de este viaje aún no está listo"), backgroundColor: Colors.orange)
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("❌ Error al cargar mapa: $e"), backgroundColor: Colors.red)
+      );
     }
   }
 
@@ -374,8 +421,9 @@
               ),
               const SizedBox(height: 30),
 
-              // Botón de Inicio
-              SizedBox(
+
+                  // Botón de Inicio
+                SizedBox(
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
@@ -411,9 +459,27 @@
                     : Text(
                         _viajeExitoso ? "VIAJE INICIADO ✓" : "INICIAR VIAJE", 
                         style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)
-                      ),
+                      ), // 👈 CIERRE DEL TEXTO
+                ), // 👈 CIERRE DEL ELEVATED BUTTON
+              ), // 👈 CIERRE DEL SIZED BOX
+
+              // 🚀 NUEVO: BOTÓN DE MAPA OCULTO (Solo aparece si _viajeExitoso es true)
+              if (_viajeExitoso) ...[
+                const SizedBox(height: 20), // Un espacio de separación
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[800]),
+                    onPressed: _abrirMapaRuta,
+                    icon: const Icon(Icons.map, color: Colors.white),
+                    label: const Text("VER MI RUTA EN EL MAPA", 
+                      style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)
+                    ),
+                  ),
                 ),
-              ),
+              ], // Fin del botón de mapa
+
             ], // Cierra Column
           ), // Cierra Column
         ), // Cierra SingleChildScrollView

@@ -8,6 +8,7 @@ import 'package:latlong2/latlong.dart';
 import 'validacion_page.dart';
 import 'setup_page.dart'; 
 import 'package:firebase_core/firebase_core.dart';
+import 'package:postgres/postgres.dart'; // 👈 NUEVO: Para conectarnos a Contabo en el Login
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized(); // Prepara el motor de Flutter
@@ -32,25 +33,71 @@ class _LoginPageState extends State<LoginPage> {
   double _longitudActual = -75.5812;
 
   Future<void> _conectarConServidor() async {
-    setState(() { _mensajeServidor = "Conectando a Linux..."; });
+    setState(() {
+      _mensajeServidor = "Buscando viaje asignado...";
+    });
+
     try {
-      final respuesta = await http.get(Uri.parse('https://terminals-sight-miscellaneous-pointing.trycloudflare.com/api/test?t=${_cedulaController.text}'));
-      if (respuesta.statusCode == 200) {
-        final datos = json.decode(respuesta.body);
+      // 1. NOS CONECTAMOS A CONTABO
+      final conn = await Connection.open(
+        Endpoint(
+          host: 'gctsatelital.com', database: 'app_core', username: 'flutter', password: '5cxkdu6lo', port: 5432,
+        ),
+        settings: const ConnectionSettings(sslMode: SslMode.disable, connectTimeout: Duration(seconds: 15)),
+      );
+
+      // 2. BUSCAMOS EN LA TABLA active_trips USANDO LA CÉDULA (driver_id)
+      // Nota: Convertimos la cédula ingresada a número porque en la BD es un integer
+      int cedulaIngresada = int.tryParse(_cedulaController.text) ?? 0;
+      
+      final result = await conn.execute(
+        r'SELECT driver_id, driver_name, driver_cellphone, truck_plate, trailer_plate, route_alias, customer_name FROM flutter_schema.active_trips WHERE driver_id = $1 LIMIT 1',
+        parameters: [cedulaIngresada],
+      );
+
+      await conn.close();
+
+      // 3. SI ENCONTRAMOS UN VIAJE, EMPAQUETAMOS LOS DATOS
+      if (result.isNotEmpty) {
+        final fila = result[0];
+        
+        // Aquí usamos la TABLA DE EQUIVALENCIAS para que ValidacionViajePage los entienda
+        Map<String, dynamic> datosReales = {
+          'cedula': fila[0]?.toString() ?? "",              // driver_id
+          'nombre': fila[1]?.toString() ?? "Conductor",     // driver_name
+          'celular': fila[2]?.toString() ?? "",             // driver_cellphone
+          'placa_cabezote': fila[3]?.toString() ?? "",      // truck_plate
+          'placa_trailer': fila[4]?.toString() ?? "N/A",    // trailer_plate
+          'ruta_nombre': fila[5]?.toString() ?? "No asignada", // route_alias
+          'empresa_transportadora': fila[6]?.toString() ?? "Transportes GCT", // customer_name
+          'cliente_nombre': fila[6]?.toString() ?? "Cliente",                 // customer_name
+        };
+
         setState(() {
-          _mensajeServidor = "¡ÉXITO! Recibiendo datos de ${datos['sensor']}";
-          _latitudActual = datos['lat'];  
-          _longitudActual = datos['lng'];
+          _mensajeServidor = "¡Viaje encontrado! Hola, ${datosReales['nombre']}";
         });
-        Future.delayed(const Duration(seconds: 2), () {
+
+        // 4. VIAJAMOS A LA PANTALLA DE VALIDACIÓN
+        Future.delayed(const Duration(seconds: 1), () {
           if (!mounted) return;
-          Navigator.push(
+          Navigator.pushReplacement(
             context, 
-            MaterialPageRoute(builder: (context) => ValidacionViajePage(datosServidor: datos)));
+            MaterialPageRoute(builder: (context) => ValidacionViajePage(datosServidor: datosReales))
+          );
+        });
+
+      } else {
+        // SI LA CÉDULA NO TIENE VIAJES ACTIVOS
+        setState(() {
+          _mensajeServidor = "⚠️ No hay viajes activos para esta cédula.";
         });
       }
+
     } catch (e) {
-      setState(() { _mensajeServidor = "Error de conexión en puerto 8080"; });
+      setState(() {
+        _mensajeServidor = "❌ Error de conexión con la base de datos.";
+      });
+      debugPrint("Error de Login: $e");
     }
   }
 
@@ -72,7 +119,7 @@ class _LoginPageState extends State<LoginPage> {
             ElevatedButton(
               style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(50)),
               onPressed: _conectarConServidor,
-              child: const Text("PROBAR CONEXIÓN CON LINUX"),
+              child: const Text("INICIAR SESIÓN"),
             ),
           ],
         ),
