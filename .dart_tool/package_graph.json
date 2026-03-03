@@ -7,6 +7,7 @@
       "name": "gct_mobile",
       "version": "1.0.0+1",
       "dependencies": [
+        "barcode_scan2",
         "cupertino_icons",
         "firebase_core",
         "firebase_storage",
@@ -50,6 +51,14 @@
         "stream_channel",
         "test_api",
         "vector_math"
+      ]
+    },
+    {
+      "name": "barcode_scan2",
+      "version": "4.7.2",
+      "dependencies": [
+        "flutter",
+        "protobuf"
       ]
     },
     {
@@ -298,6 +307,15 @@
         "stream_channel",
         "string_scanner",
         "term_glyph"
+      ]
+    },
+    {
+      "name": "protobuf",
+      "version": "6.0.0",
+      "dependencies": [
+        "collection",
+        "fixnum",
+        "meta"
       ]
     },
     {
@@ -739,6 +757,11 @@
       ]
     },
     {
+      "name": "fixnum",
+      "version": "1.1.1",
+      "dependencies": []
+    },
+    {
       "name": "flutter_web_plugins",
       "version": "0.0.0",
       "dependencies": [
@@ -881,11 +904,6 @@
       "dependencies": [
         "flutter"
       ]
-    },
-    {
-      "name": "fixnum",
-      "version": "1.1.1",
-      "dependencies": []
     },
     {
       "name": "wkt_parser",

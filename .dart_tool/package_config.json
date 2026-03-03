@@ -20,6 +20,12 @@
       "languageVersion": "3.4"
     },
     {
+      "name": "barcode_scan2",
+      "rootUri": "file:///Users/juanmolina/.pub-cache/hosted/pub.dev/barcode_scan2-4.7.2",
+      "packageUri": "lib/",
+      "languageVersion": "3.5"
+    },
+    {
       "name": "boolean_selector",
       "rootUri": "file:///Users/juanmolina/.pub-cache/hosted/pub.dev/boolean_selector-2.1.2",
       "packageUri": "lib/",
@@ -510,6 +516,12 @@
       "rootUri": "file:///Users/juanmolina/.pub-cache/hosted/pub.dev/proj4dart-2.1.0",
       "packageUri": "lib/",
       "languageVersion": "2.12"
+    },
+    {
+      "name": "protobuf",
+      "rootUri": "file:///Users/juanmolina/.pub-cache/hosted/pub.dev/protobuf-6.0.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.7"
     },
     {
       "name": "pub_semver",

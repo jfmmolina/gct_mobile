@@ -48,11 +48,12 @@ class _LoginPageState extends State<LoginPage> {
 
       // 2. BUSCAMOS EN LA TABLA active_trips USANDO LA CÉDULA (driver_id)
       // Nota: Convertimos la cédula ingresada a número porque en la BD es un integer
+      // 2. BUSCAMOS EN LA TABLA active_trips USANDO LA CÉDULA (driver_cc)
       int cedulaIngresada = int.tryParse(_cedulaController.text) ?? 0;
       
       final result = await conn.execute(
-        r'SELECT driver_id, driver_name, driver_cellphone, truck_plate, trailer_plate, route_alias, customer_name FROM flutter_schema.active_trips WHERE driver_id = $1 LIMIT 1',
-        parameters: [cedulaIngresada],
+        r'SELECT driver_cc, driver_name, driver_cellphone, truck_plate, trailer_plate, route_alias, user_preferred_name, customer_name, truck_odometer FROM flutter_schema.active_trips WHERE driver_cc = $1 LIMIT 1',
+        parameters: [cedulaIngresada], // ⚠️ Nota: Si driver_cc en tu BD es texto (VARCHAR), cámbialo a: [_cedulaController.text]
       );
 
       await conn.close();
@@ -61,16 +62,17 @@ class _LoginPageState extends State<LoginPage> {
       if (result.isNotEmpty) {
         final fila = result[0];
         
-        // Aquí usamos la TABLA DE EQUIVALENCIAS para que ValidacionViajePage los entienda
+        // 🚀 CORRECCIÓN: Los índices actualizados del 0 al 8
         Map<String, dynamic> datosReales = {
-          'cedula': fila[0]?.toString() ?? "",              // driver_id
-          'nombre': fila[1]?.toString() ?? "Conductor",     // driver_name
-          'celular': fila[2]?.toString() ?? "",             // driver_cellphone
-          'placa_cabezote': fila[3]?.toString() ?? "",      // truck_plate
-          'placa_trailer': fila[4]?.toString() ?? "N/A",    // trailer_plate
-          'ruta_nombre': fila[5]?.toString() ?? "No asignada", // route_alias
-          'empresa_transportadora': fila[6]?.toString() ?? "Transportes GCT", // customer_name
-          'cliente_nombre': fila[6]?.toString() ?? "Cliente",                 // customer_name
+          'cedula': fila[0]?.toString() ?? "",              // 0: driver_cc
+          'nombre': fila[1]?.toString() ?? "Conductor",     // 1: driver_name
+          'celular': fila[2]?.toString() ?? "",             // 2: driver_cellphone
+          'placa_cabezote': fila[3]?.toString() ?? "",      // 3: truck_plate
+          'placa_trailer': fila[4]?.toString() ?? "N/A",    // 4: trailer_plate
+          'ruta_nombre': fila[5]?.toString() ?? "No asignada", // 5: route_alias
+          'empresa_transportadora': fila[6]?.toString() ?? "Transportes GCT", // 6: user_preferred_name (NUEVO)
+          'cliente_nombre': fila[7]?.toString() ?? "Cliente",                 // 7: customer_name 
+          'odometro_bd': fila[8]?.toString() ?? "0",        // 8: truck_odometer 
         };
 
         setState(() {
@@ -203,6 +205,14 @@ class _DashboardPageState extends State<DashboardPage> {
         title: const Text("GCT - RASTREO EN VIVO"),
         backgroundColor: Colors.blue[900],
       ),
+
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _mostrarAlertaNovedad,
+        backgroundColor: Colors.red,
+        icon: const Icon(Icons.warning_amber_rounded, color: Colors.white),
+        label: const Text("REPORTAR NOVEDAD", style: TextStyle(color: Colors.white)),
+      ),
+
       body: Stack(
         children: [
           // NIVEL 1: EL MAPA
@@ -314,32 +324,147 @@ Widget _buildInfoItem(String label, String value, Color color, bool esCelular) {
     ],
   );
 }
+// --- VARIABLE PARA EL COMENTARIO ---
+  final TextEditingController _comentarioController = TextEditingController();
+  
+  // --- FUNCIÓN 1: EL MENÚ EMERGENTE DE NOVEDADES (CON CAJA DE TEXTO) ---
+  // --- FUNCIÓN 1: EL MENÚ EMERGENTE DE NOVEDADES (ACTUALIZADO) ---
+  void _mostrarAlertaNovedad() {
+    _comentarioController.clear(); 
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true, 
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom + 20, 
+            left: 20, right: 20, top: 20
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 50),
+              const SizedBox(height: 10),
+              const Text(
+                "Usted se ha detenido por más de 5 minutos en un lugar no autorizado",
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 15),
+              
+              TextField(
+                controller: _comentarioController,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: InputDecoration(
+                  labelText: "Escriba un comentario (Opcional)",
+                  prefixIcon: const Icon(Icons.edit_note, color: Colors.blue),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                maxLength: 100,
+              ),
+              
+              const SizedBox(height: 10),
+              const Text("Seleccione el motivo principal:", style: TextStyle(color: Colors.grey, fontSize: 13)),
+              const SizedBox(height: 15),
+              
+              Wrap(
+                spacing: 20, 
+                runSpacing: 15, 
+                alignment: WrapAlignment.center,
+                children: [
+                  _botonNovedad(Icons.traffic, "Tráfico", Colors.orange),
+                  _botonNovedad(Icons.remove_road, "Vía Bloqueada", Colors.red),
+                  _botonNovedad(Icons.car_repair, "Falla Mecánica", Colors.purple), 
+                  _botonNovedad(Icons.coffee, "Descanso", Colors.blue),
+                  _botonNovedad(Icons.restaurant, "Almuerzo", Colors.green),
+                  _botonNovedad(Icons.hotel, "Pernoctar", Colors.indigo),
+                ],
+              ),
+            ],
+          ),
+        );
+      }
+    );
+  }
+
+  // --- FUNCIÓN 2: DISEÑO DE LOS BOTONES GRANDES ---
+  Widget _botonNovedad(IconData icono, String titulo, Color color) {
+    return InkWell(
+      onTap: () {
+        Navigator.pop(context); // Cierra el menú
+        _enviarNovedad(titulo); // Envía a Contabo
+      },
+      borderRadius: BorderRadius.circular(15),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircleAvatar(
+            radius: 35, 
+            backgroundColor: color.withOpacity(0.15),
+            child: Icon(icono, color: color, size: 35),
+          ),
+          const SizedBox(height: 8),
+          Text(titulo, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+        ],
+      ),
+    );
+  }
+
+  // --- FUNCIÓN 3: ENVIAR A CONTABO (TABLA INTERMEDIA) ---
+  Future<void> _enviarNovedad(String motivo) async {
+    String comentario = _comentarioController.text;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("⏳ Registrando $motivo..."), backgroundColor: Colors.orange),
+    );
+
+    try {
+      final conn = await Connection.open(
+        Endpoint(
+          host: 'gctsatelital.com', database: 'app_core', username: 'flutter', password: '5cxkdu6lo', port: 5432,
+        ),
+        settings: const ConnectionSettings(sslMode: SslMode.disable, connectTimeout: Duration(seconds: 15)),
+      );
+
+      // INSERTAMOS EN LA TABLA NUEVA (novedades_viaje)
+      await conn.execute(
+        r'''
+        INSERT INTO flutter_schema.novedades_viaje 
+        (placa_cabezote, motivo, comentario, latitud, longitud, fecha_reporte) 
+        VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+        ''',
+        parameters: [
+          "TTR578", // ⚠️ Recuerda cambiar esto por la variable real luego
+          motivo, 
+          comentario, 
+          currentLat.toString(), 
+          currentLng.toString()
+        ],
+      );
+
+      await conn.close();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("✅ Novedad registrada en el historial"), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      debugPrint("Error al subir novedad: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ Error: $e"), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
 
 } // <--- ESTA ES LA LLAVE FINAL QUE CIERRA LA CLASE _DashboardPageState
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 

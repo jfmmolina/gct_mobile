@@ -1,3 +1,4 @@
+  import 'main.dart'; // 👈 IMPORTANTE para que reconozca el DashboardPage
   import 'dart:io';
   import 'package:firebase_storage/firebase_storage.dart';
   import 'package:postgres/postgres.dart';
@@ -8,6 +9,7 @@
   import 'package:flutter/material.dart';
   import 'package:image/image.dart' as img; // 👈 NUEVO: Herramienta para estampar
   import 'package:url_launcher/url_launcher.dart'; // 👈 NUEVO: Para abrir el mapa
+  import 'package:barcode_scan2/barcode_scan2.dart';
 
 
   class ValidacionViajePage extends StatefulWidget {
@@ -33,6 +35,31 @@
     
     bool _subiendoViaje = false;  // 👈 NUEVO: Muestra que está cargando
     bool _viajeExitoso = false;   // 👈 NUEVO: Bloquea el botón al terminar
+
+  // --- FUNCIÓN ACTUALIZADA: LECTOR DE CÓDIGO DE BARRAS (MODERNO) ---
+  Future<void> _escanearGuia() async {
+    try {
+      // Abre la cámara con el escáner moderno
+      var result = await BarcodeScanner.scan();
+
+      // Si el escaneo fue un éxito y no se canceló
+      if (result.type == ResultType.Barcode && mounted) {
+        setState(() {
+          // Ponemos el texto escaneado (rawContent) en la caja de texto
+          _guiaController.text = result.rawContent;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("✅ Código leído exitosamente"), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ Error al usar escáner: $e"), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
 
     // --- FUNCIÓN DE CAPTURA DE FOTO ---
     
@@ -411,10 +438,15 @@
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 child: TextField(
                   controller: _guiaController,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration( // Quita el "const" de aquí para que funcione el botón
                     labelText: "Ingrese el # de Guía de Viaje",
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.description),
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.description),
+                    // 🚀 NUEVO: Botón de escáner dentro del campo de texto
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.qr_code_scanner, color: Colors.blue, size: 30),
+                      onPressed: _escanearGuia,
+                    ),
                   ),
                   onChanged: (val) => setState(() {}),
                 ),
@@ -435,7 +467,8 @@
                   onPressed: (_guiaController.text.isNotEmpty && _odometroController.text.isNotEmpty && !_subiendoViaje && !_viajeExitoso)
                     ? () {
                         int odoNuevo = int.tryParse(_odometroController.text) ?? 0;
-                        int odoBaseDatos = 123456789;
+                        // 👈 NUEVO: Leemos el odómetro que viene de la base de datos
+                        int odoBaseDatos = int.tryParse(widget.datosServidor['odometro_bd']?.toString() ?? "0") ?? 0;
 
                         if (odoNuevo > odoBaseDatos) {
                           _subirEvidencias();
@@ -464,21 +497,31 @@
               ), // 👈 CIERRE DEL SIZED BOX
 
               // 🚀 NUEVO: BOTÓN DE MAPA OCULTO (Solo aparece si _viajeExitoso es true)
-              if (_viajeExitoso) ...[
-                const SizedBox(height: 20), // Un espacio de separación
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton.icon(
+              // Reemplaza todo el bloque del "if (_viajeExitoso)" por esto:
+                if (_viajeExitoso) ...[
+                  const SizedBox(height: 20),
+                    SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[800]),
-                    onPressed: _abrirMapaRuta,
                     icon: const Icon(Icons.map, color: Colors.white),
-                    label: const Text("VER MI RUTA EN EL MAPA", 
-                      style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)
+                    label: const Text("VER MI RUTA EN EL MAPA", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+      
+                    // 👇 AQUÍ ESTÁ EL CAMBIO IMPORTANTE 👇
+                    onPressed: () {
+                    Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                    builder: (context) => const DashboardPage(
+                      lat: 4.6097,   // Coordenadas iniciales
+                      lng: -74.0817, 
+                      ),
                     ),
-                  ),
-                ),
-              ], // Fin del botón de mapa
+            );},
+          ),
+        ),
+      ],  
 
             ], // Cierra Column
           ), // Cierra Column
