@@ -9,6 +9,7 @@ import 'validacion_page.dart';
 import 'setup_page.dart'; 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:postgres/postgres.dart'; // 👈 NUEVO: Para conectarnos a Contabo en el Login
+import 'finalizar_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized(); // Prepara el motor de Flutter
@@ -204,6 +205,33 @@ class _DashboardPageState extends State<DashboardPage> {
       appBar: AppBar(
         title: const Text("GCT - RASTREO EN VIVO"),
         backgroundColor: Colors.blue[900],
+        
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 10.0),
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              ),
+              icon: const Icon(Icons.flag, size: 18),
+              label: const Text("FINALIZAR", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              onPressed: () {
+                // Navegamos a la pantalla de cierre
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => FinalizarViajePage(
+                      currentLat: currentLat,
+                      currentLng: currentLng,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
 
       floatingActionButton: FloatingActionButton.extended(
