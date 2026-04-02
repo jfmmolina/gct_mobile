@@ -35,36 +35,40 @@ class _LoginPageState extends State<LoginPage> {
   String _mensajeServidor = "Esperando conexión...";
 
   Future<void> _conectarConServidor() async {
-    setState(() {
-      _mensajeServidor = "Buscando viaje asignado...";
-    });
+    setState(() => _mensajeServidor = "Buscando viaje asignado...");
 
     try {
-      // 1. CONEXIÓN BD
       final conn = await Connection.open(
         Endpoint(
-          host: 'gctsatelital.com', database: 'app_core', username: 'flutter', password: '5cxkdu6lo', port: 5432,
+          host: 'gctsatelital.com', 
+          database: 'app_core', 
+          username: 'flutter', 
+          password: '5cxkdu6lo', 
+          port: 5432
         ),
         settings: const ConnectionSettings(sslMode: SslMode.disable, connectTimeout: Duration(seconds: 15)),
       );
 
-      // 2. BUSQUEDA CON TRIP_ID
       int cedulaIngresada = int.tryParse(_cedulaController.text) ?? 0;
       
+      // Consulta ADAPTADA a las columnas que ya tienes en pgAdmin
       final result = await conn.execute(
-        r'SELECT trip_id, driver_cc, driver_name, driver_cellphone, truck_plate, trailer_plate, route_alias, user_preferred_name, customer_name, truck_odometer, mapa_iframe_url FROM flutter_schema.active_trips WHERE driver_cc = $1 LIMIT 1',
-          parameters: [cedulaIngresada],
+        r'''SELECT trip_id, driver_cc, driver_name, driver_cellphone, truck_plate, trailer_plate, 
+            route_alias, user_preferred_name, customer_name, truck_odometer, mapa_iframe_url, 
+            effective_hours, unloading_schedule, loading_schedule
+            FROM flutter_schema.active_trips WHERE driver_cc = $1 LIMIT 1''',
+        parameters: [cedulaIngresada],
       );
 
       await conn.close();
 
-      // 3. PROCESAR RESULTADO
       if (result.isNotEmpty) {
         final fila = result[0];
         
+        // Mapeo seguro con las columnas existentes
         Map<String, dynamic> datosReales = {
-          'trip_id': fila[0],                   // 0: trip_id (IMPORTANTE)
-          'cedula': fila[1]?.toString() ?? "",  // 1: driver_cc
+          'trip_id': fila[0],
+          'cedula': fila[1]?.toString() ?? "",
           'nombre': fila[2]?.toString() ?? "Conductor",
           'celular': fila[3]?.toString() ?? "",
           'placa_cabezote': fila[4]?.toString() ?? "",
@@ -73,33 +77,24 @@ class _LoginPageState extends State<LoginPage> {
           'empresa_transportadora': fila[7]?.toString() ?? "Transportes GCT",
           'cliente_nombre': fila[8]?.toString() ?? "Cliente", 
           'odometro_bd': fila[9]?.toString() ?? "0",
-          'mapa_url': fila[10]?.toString() ?? "",        
+          'mapa_url': fila[10]?.toString() ?? "",
+          'effective_hours': fila[11] ?? 0, 
+          'fecha_descargue': fila[12] is DateTime ? fila[12] : DateTime.now().add(const Duration(hours: 24)), 
+          'fecha_cargue': fila[13] is DateTime ? fila[13] : DateTime.now(),
         };
 
-        setState(() {
-          _mensajeServidor = "¡Viaje encontrado! Hola, ${datosReales['nombre']}";
-        });
+        setState(() => _mensajeServidor = "¡Viaje encontrado!");
 
-        // 4. NAVEGAR
         Future.delayed(const Duration(seconds: 1), () {
           if (!mounted) return;
-          Navigator.pushReplacement(
-            context, 
-            MaterialPageRoute(builder: (context) => ValidacionViajePage(datosServidor: datosReales))
-          );
+          Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => ValidacionViajePage(datosServidor: datosReales)));
         });
-
       } else {
-        setState(() {
-          _mensajeServidor = "⚠️ No hay viajes activos para esta cédula.";
-        });
+        setState(() => _mensajeServidor = "⚠️ Sin viajes activos.");
       }
-
     } catch (e) {
-      setState(() {
-        _mensajeServidor = "❌ Error de conexión: $e";
-      });
-      debugPrint("Error de Login: $e");
+      setState(() => _mensajeServidor = "❌ Error de conexión BD.");
+      debugPrint("DETALLE ERROR: $e");
     }
   }
 
@@ -108,29 +103,21 @@ class _LoginPageState extends State<LoginPage> {
     return Scaffold(
       body: Padding(
         padding: const EdgeInsets.all(20.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.wifi_tethering, size: 80, color: Colors.blue),
-            const Text("GCT MOBILE", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 40),
-            TextField(controller: _cedulaController, decoration: const InputDecoration(labelText: 'Cédula', border: OutlineInputBorder())),
-            const SizedBox(height: 10),
-            Text(_mensajeServidor, style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(50)),
-              onPressed: _conectarConServidor,
-              child: const Text("INICIAR SESIÓN"),
-            ),
-          ],
-        ),
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          const Icon(Icons.wifi_tethering, size: 80, color: Colors.blue),
+          const Text("GCT MOBILE", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 40),
+          TextField(controller: _cedulaController, decoration: const InputDecoration(labelText: 'Cédula', border: OutlineInputBorder())),
+          const SizedBox(height: 10),
+          Text(_mensajeServidor, style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 20),
+          ElevatedButton(style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(50)), onPressed: _conectarConServidor, child: const Text("INICIAR SESIÓN")),
+        ]),
       ),
     );
   }
 }
 
-// --- DASHBOARD CON MAPA REAL GCT ---
 class DashboardPage extends StatefulWidget {
   final double lat;
   final double lng;
@@ -146,13 +133,16 @@ class _DashboardPageState extends State<DashboardPage> {
   late double currentLat;
   late double currentLng;
   Timer? _timer;
-  
-  // Controlador para el mapa de ruta real
   late final WebViewController _webController;
 
-  String sensorName = "Cargando...";
+  String sensorName = "Sincronizando...";
   int velocidad = 0;
   String status = "online";
+
+  double porcentajeTiempo = 0.0;
+  String tiempoRestanteTexto = "Calculando tiempo...";
+  bool permitirFinalizar = false;
+  Color colorBarra = Colors.green;
 
   @override
   void initState() {
@@ -160,149 +150,152 @@ class _DashboardPageState extends State<DashboardPage> {
     currentLat = widget.lat;
     currentLng = widget.lng;
 
-    // Configuración del mapa real usando la URL de la base de datos
     _webController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0x00000000))
       ..loadRequest(Uri.parse(widget.datosViaje['mapa_url'] ?? "https://google.com"));
 
-    _timer = Timer.periodic(const Duration(seconds: 5), (timer) => _actualizarUbicacion());
+    _procesarSeguridad();
+    _timer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      _actualizarUbicacion();
+      _procesarSeguridad();
+    });
+  }
+
+  void _procesarSeguridad() {
+    final ahora = DateTime.now();
+    final inicio = widget.datosViaje['fecha_cargue'] as DateTime;
+    final fin = widget.datosViaje['fecha_descargue'] as DateTime;
+
+    final totalViaje = fin.difference(inicio).inSeconds;
+    final tiempoPasado = ahora.difference(inicio).inSeconds;
+    
+    if (totalViaje > 0) {
+      porcentajeTiempo = (tiempoPasado / totalViaje).clamp(0.0, 1.0);
+    }
+
+    final diff = fin.difference(ahora);
+    
+    if (diff.isNegative) {
+      tiempoRestanteTexto = "VIGENCIA SUPERADA";
+      colorBarra = Colors.red;
+      permitirFinalizar = true; 
+    } else {
+      int h = diff.inHours;
+      int m = diff.inMinutes % 60;
+      tiempoRestanteTexto = "Quedan: ${h}h ${m}m";
+      colorBarra = Colors.green;
+      permitirFinalizar = false; // Se bloquea mientras haya tiempo
+    }
+
+    if (mounted) setState(() {});
   }
 
   Future<void> _actualizarUbicacion() async {
     try {
-      final respuesta = await http.get(Uri.parse('https://terminals-sight-miscellaneous-pointing.trycloudflare.com/api/test?t=${DateTime.now().millisecondsSinceEpoch}'));
-      if (respuesta.statusCode == 200) {
-        final datos = json.decode(respuesta.body);
+      final resp = await http.get(Uri.parse('https://terminals-sight-miscellaneous-pointing.trycloudflare.com/api/test?t=${DateTime.now().millisecondsSinceEpoch}'));
+      if (resp.statusCode == 200) {
+        final d = json.decode(resp.body);
         if (mounted) {
           setState(() {
-            currentLat = datos['lat'];
-            currentLng = datos['lng'];
-            sensorName = datos['sensor'];
-            velocidad = datos['velocidad'];
-            status = datos['status'];
-          });
+          currentLat = d['lat'];
+          currentLng = d['lng'];
+          sensorName = d['sensor'];
+          velocidad = d['velocidad'];
+          status = d['status'];
+        });
         }
       }
-    } catch (e) {
-      debugPrint("Error de actualización: $e");
-    }
+    } catch (e) { debugPrint("GPS Error: $e"); }
   }
 
   @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  Widget _buildInfoItem(String label, String value, Color color, bool esCelular) {
-    return Column(
-      children: [
-        Text(label, style: TextStyle(fontSize: esCelular ? 10 : 12, color: Colors.grey[600])),
-        Text(value, style: TextStyle(fontSize: esCelular ? 13 : 16, fontWeight: FontWeight.bold, color: color))
-      ]
-    );
-  }
+  void dispose() { _timer?.cancel(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("GCT - RASTREO EN VIVO"),
+        title: const Text("GCT RASTREO"),
         backgroundColor: Colors.blue[900],
         foregroundColor: Colors.white,
         actions: [
           Padding(
-            padding: const EdgeInsets.only(right: 10.0),
+            padding: const EdgeInsets.only(right: 8.0),
             child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.redAccent, 
-                foregroundColor: Colors.white, 
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5)
+                backgroundColor: permitirFinalizar ? Colors.redAccent : Colors.grey[400],
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 10)
               ),
-              icon: const Icon(Icons.flag, size: 18),
-              label: const Text("FINALIZAR", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-              onPressed: () {
-                Navigator.push(
-                  context, 
-                  MaterialPageRoute(builder: (context) => FinalizarViajePage(
-                    currentLat: currentLat, 
-                    currentLng: currentLng,
-                    tripId: widget.datosViaje['trip_id'], 
-                    placa: widget.datosViaje['placa_cabezote'], 
-                  ))
-                );
-              },
+              icon: Icon(permitirFinalizar ? Icons.flag : Icons.lock_clock, size: 16),
+              label: Text(permitirFinalizar ? "FINALIZAR" : "BLOQUEADO", style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+              onPressed: permitirFinalizar ? () {
+                Navigator.push(context, MaterialPageRoute(builder: (context) => FinalizarViajePage(
+                  currentLat: currentLat, currentLng: currentLng,
+                  tripId: widget.datosViaje['trip_id'], placa: widget.datosViaje['placa_cabezote'], 
+                )));
+              } : null,
             ),
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => NovedadesPage(
-                datosViaje: widget.datosViaje,
-                lat: currentLat,
-                lng: currentLng,
-              ),
-            ),
-          );
-        },
+        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => NovedadesPage(datosViaje: widget.datosViaje, lat: currentLat, lng: currentLng))),
         backgroundColor: Colors.red,
         icon: const Icon(Icons.warning_amber_rounded, color: Colors.white),
-        label: const Text("REPORTAR NOVEDAD", style: TextStyle(color: Colors.white)),
+        label: const Text("NOVEDAD", style: TextStyle(color: Colors.white)),
       ),
       body: Stack(
         children: [
-          // MAPA REAL (WebView)
           WebViewWidget(controller: _webController),
-
-          // TARJETA DE INFORMACIÓN (Encima del mapa)
+          
           Positioned(
-            top: 10, left: 10, right: 10,
+            top: 12, left: 15, right: 15,
             child: SafeArea(
-              child: LayoutBuilder(builder: (context, constraints) {
-                bool esCelular = constraints.maxWidth < 600;
-                return Card(
-                  elevation: 6, 
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)), 
-                  color: Colors.white.withOpacity(0.92),
-                  child: Padding(
-                    padding: EdgeInsets.all(esCelular ? 10.0 : 20.0), 
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min, 
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween, 
-                          children: [
-                            Text(sensorName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: esCelular ? 14 : 18)), 
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), 
-                              decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(8)), 
-                              child: Text(status.toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 9))
-                            )
-                          ]
+              child: Card(
+                elevation: 10, 
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)), 
+                child: Padding(
+                  padding: const EdgeInsets.all(15.0), 
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min, 
+                    children: [
+                      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                        Text("VIGENCIA (${widget.datosViaje['effective_hours']}h)", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 9, color: Colors.blueGrey)),
+                        Text(tiempoRestanteTexto, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: colorBarra)),
+                      ]),
+                      const SizedBox(height: 10),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: LinearProgressIndicator(
+                          value: porcentajeTiempo,
+                          minHeight: 14,
+                          backgroundColor: Colors.grey[200],
+                          valueColor: AlwaysStoppedAnimation<Color>(colorBarra),
                         ),
-                        const Divider(height: 15),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround, 
-                          children: [
-                            _buildInfoItem("Velocidad", "$velocidad km/h", Colors.blue, esCelular), 
-                            _buildInfoItem("Latitud", currentLat.toStringAsFixed(4), Colors.black87, esCelular), 
-                            _buildInfoItem("Longitud", currentLng.toStringAsFixed(4), Colors.black87, esCelular)
-                          ]
-                        ),
-                      ]
-                    )
-                  ),
-                );
-              }),
+                      ),
+                      const SizedBox(height: 15),
+                      Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+                        _stat("Km/h", "$velocidad"),
+                        _stat("ID Viaje", "${widget.datosViaje['trip_id']}"),
+                        _stat("GPS", status.toUpperCase()),
+                      ]),
+                    ]
+                  )
+                ),
+              ),
             ),
           ), 
         ],
       ),
     );
+  }
+
+  Widget _stat(String l, String v) {
+    return Column(children: [
+      Text(l, style: const TextStyle(fontSize: 8, color: Colors.grey)),
+      Text(v, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold))
+    ]);
   }
 }

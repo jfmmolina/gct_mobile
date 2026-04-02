@@ -1,0 +1,1 @@
+ /Users/juanmolina/developer/proyectos_apps/gct_mobile/.dart_tool/flutter_build/a5a055db15603fa01cc6680647ca3f8b/native_assets.json: 

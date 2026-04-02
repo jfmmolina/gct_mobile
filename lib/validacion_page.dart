@@ -253,7 +253,25 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Validación de Inicio")),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent, // Fondo limpio
+        elevation: 0, // Sin sombra
+        title: const Text(
+          "Validación de Inicio", 
+          style: TextStyle(color: Colors.black87, fontSize: 20)
+        ),
+        centerTitle: false,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black87), // Flechita
+          onPressed: () {
+            // Esto destruye la pantalla actual y vuelve a cargar el Login
+            Navigator.pushReplacement(
+              context, 
+              MaterialPageRoute(builder: (context) => const LoginPage())
+            );
+          },
+        ),
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
