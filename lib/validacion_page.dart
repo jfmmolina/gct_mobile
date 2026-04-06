@@ -1,3 +1,4 @@
+import 'preoperacional_opciones_page.dart';
 import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -133,7 +134,10 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
       String trailer = widget.datosServidor['placa_trailer']?.toString() ?? "";
       String cabezote = widget.datosServidor['placa_cabezote']?.toString() ?? "";
       
-      String urlPublicaFinal = ""; 
+      // EXTRACCIÓN DEL JSON (Si no hizo preoperacional, enviamos un JSON vacío '{}')
+      String preopJsonStr = widget.datosServidor['preoperacional_json']?.toString() ?? '{}';
+      
+      String urlPublicaFinal = "";
 
       // 1. SUBIR FOTOS A FIREBASE CON LIMITE DE TIEMPO
       if (_listaFotos.isNotEmpty) {
@@ -187,8 +191,8 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
         await session.execute(
            r'''
            INSERT INTO flutter_schema.viajes 
-           (guia, odometro, celular, trailer, placa_cabezote, foto_evidencia, latitud, longitud, trip_id, fecha_registro)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+           (guia, odometro, celular, trailer, placa_cabezote, foto_evidencia, latitud, longitud, trip_id, fecha_registro, preoperacional_data)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, $10)
            ''',
            parameters: [
              _guiaController.text,      // $1
@@ -199,7 +203,8 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
              urlPublicaFinal,           // $6
              _latitudActual,            // $7
              _longitudActual,           // $8
-             tripIdReal                 // $9 
+             tripIdReal,                // $9 
+             preopJsonStr               // $10 <-- AQUÍ VA EL JSON
            ]
         );
       });
@@ -299,6 +304,33 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
               subtitle: Text("Celular: ${widget.datosServidor['celular']}"),
               trailing: IconButton(icon: const Icon(Icons.edit_note, color: Colors.orange), onPressed: () => _editarDato("Celular", "celular")),
             ),
+// --- BOTÓN DE PREOPERACIONAL ---
+const SizedBox(height: 20),
+ElevatedButton.icon(
+  onPressed: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PreoperacionalOpcionesPage(
+          datosServidor: widget.datosServidor, // Pasamos los datos del viaje
+        ),
+      ),
+    );
+  },
+  icon: const Icon(Icons.fact_check, size: 24),
+  label: const Text("📝 Registrar Preoperacional", style: TextStyle(fontSize: 16)),
+  style: ElevatedButton.styleFrom(
+    padding: const EdgeInsets.symmetric(vertical: 15),
+    backgroundColor: Colors.orange[800], // Un color llamativo para que no lo ignoren
+    foregroundColor: Colors.white,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(10),
+    ),
+    minimumSize: const Size(double.infinity, 50), // Botón ancho
+  ),
+),
+const SizedBox(height: 15),
+// -------------------------------
 
             // DATOS VEHICULO
             Card(
