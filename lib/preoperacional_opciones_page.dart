@@ -4,6 +4,7 @@ import 'preoperacional_formulario_page.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'package:postgres/postgres.dart';
 
 // Importa tu página de validación actual para poder "Saltar" a ella
 import 'validacion_page.dart'; 
@@ -34,8 +35,8 @@ class _PreoperacionalOpcionesPageState extends State<PreoperacionalOpcionesPage>
 
       try {
         File archivoFisico = File(foto.path);
-        
         int driverId = int.tryParse(widget.datosServidor['driver_id']?.toString() ?? "0") ?? 0;
+        int tripIdReal = int.tryParse(widget.datosServidor['trip_id']?.toString() ?? "0") ?? 0;
         
         // 1. SUBIR FOTO A FIREBASE
         String nombreArchivo = "preoperacional_${driverId}_${DateTime.now().millisecondsSinceEpoch}.jpg";
@@ -52,19 +53,35 @@ class _PreoperacionalOpcionesPageState extends State<PreoperacionalOpcionesPage>
           "comentarios": "Preoperacional físico subido por foto"
         };
 
-        // 3. GUARDAR EN MEMORIA
+        // 3. GUARDAR EN MEMORIA EL JSON Y CAMBIAR LA FASE
         widget.datosServidor['preoperacional_json'] = jsonEncode(jsonPreoperacional);
+        widget.datosServidor['fase_viaje'] = 'PREOP_LISTO'; 
+
+        // 4. ACTUALIZAR LA TORRE DE CONTROL (POSTGRESQL) - AHORA CON EL BLINDAJE JSON
+        final conn = await Connection.open(
+          Endpoint(host: 'gctsatelital.com', database: 'app_core', username: 'flutter', password: '5cxkdu6lo', port: 5432),
+          settings: const ConnectionSettings(sslMode: SslMode.disable, connectTimeout: Duration(seconds: 15)),
+        );
+        await conn.execute(
+          "UPDATE flutter_schema.active_trips SET fase_viaje = 'PREOP_LISTO', fecha_preop_app = CURRENT_TIMESTAMP, preoperacional_data = \$2 WHERE trip_id = \$1",
+          parameters: [tripIdReal, jsonEncode(jsonPreoperacional)],
+        );
+        await conn.close();
 
         if (!mounted) return;
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ Foto procesada. Continúe con el viaje."), backgroundColor: Colors.green));
         
-        _irAValidacionViaje();
+        // Teletransportación segura
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => ValidacionViajePage(datosServidor: widget.datosServidor)),
+          (route) => false,
+        );
 
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("❌ Error subiendo foto: $e"), backgroundColor: Colors.red));
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("❌ Error: $e"), backgroundColor: Colors.red));
         }
       } finally {
         if (mounted) setState(() => _subiendoFoto = false);
@@ -72,21 +89,60 @@ class _PreoperacionalOpcionesPageState extends State<PreoperacionalOpcionesPage>
     }
   }
 
-  // Función para omitir y continuar
-  void _irAValidacionViaje() {
+  // Función para abrir el formulario digital
+  void _abrirFormularioDigital() {
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (context) => ValidacionViajePage(datosServidor: widget.datosServidor)),
+      MaterialPageRoute(builder: (context) => PreoperacionalFormularioPage(datosServidor: widget.datosServidor)),
     );
   }
 
-  // Función para abrir el formulario digital (Lo haremos en el Paso 2)
-  void _abrirFormularioDigital() {
-  Navigator.pushReplacement(
-    context,
-    MaterialPageRoute(builder: (context) => PreoperacionalFormularioPage(datosServidor: widget.datosServidor)),
-  );
-}
+  // Función para omitir y continuar
+  Future<void> _omitirPreoperacional() async {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⏳ Omitiendo y actualizando fase..."), backgroundColor: Colors.orange));
+
+    try {
+      int tripIdReal = int.tryParse(widget.datosServidor['trip_id']?.toString() ?? "0") ?? 0;
+
+      // 1. Armamos un JSON que registre la omisión para tener historial
+      Map<String, dynamic> jsonOmitido = {
+        "tipo_registro": "OMITIDO",
+        "fecha_registro": DateTime.now().toIso8601String(),
+        "observaciones": "El conductor omitió el registro preoperacional."
+      };
+
+      // 2. Actualizamos la base de datos a PREOP_LISTO
+      final conn = await Connection.open(
+        Endpoint(host: 'gctsatelital.com', database: 'app_core', username: 'flutter', password: '5cxkdu6lo', port: 5432),
+        settings: const ConnectionSettings(sslMode: SslMode.disable, connectTimeout: Duration(seconds: 15)),
+      );
+
+      await conn.execute(
+        "UPDATE flutter_schema.active_trips SET fase_viaje = 'PREOP_LISTO', fecha_preop_app = CURRENT_TIMESTAMP, preoperacional_data = \$2 WHERE trip_id = \$1",
+        parameters: [tripIdReal, jsonEncode(jsonOmitido)],
+      );
+      await conn.close();
+
+      // 3. Actualizamos la memoria del celular
+      widget.datosServidor['fase_viaje'] = 'PREOP_LISTO';
+      widget.datosServidor['preoperacional_json'] = jsonEncode(jsonOmitido);
+
+      // 4. Teletransportación segura a la pantalla final
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => ValidacionViajePage(datosServidor: widget.datosServidor)),
+        (route) => false,
+      );
+
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("❌ Error de conexión: $e"), backgroundColor: Colors.red));
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -127,7 +183,7 @@ class _PreoperacionalOpcionesPageState extends State<PreoperacionalOpcionesPage>
 
             // OPCIÓN 2: FOTO DEL PAPEL
             ElevatedButton.icon(
-              onPressed: _subiendoFoto ? null : _tomarFotoFisico, // Bloquea si está subiendo
+              onPressed: _subiendoFoto ? null : _tomarFotoFisico,
               icon: _subiendoFoto 
                   ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                   : const Icon(Icons.camera_alt),
@@ -145,7 +201,7 @@ class _PreoperacionalOpcionesPageState extends State<PreoperacionalOpcionesPage>
 
             // OPCIÓN 3: OMITIR
             TextButton.icon(
-              onPressed: _irAValidacionViaje,
+              onPressed: _omitirPreoperacional,
               icon: const Icon(Icons.skip_next, color: Colors.grey),
               label: const Text("Omitir y continuar al viaje", style: TextStyle(color: Colors.grey, fontSize: 16)),
             ),

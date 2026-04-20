@@ -1,6 +1,11 @@
-import 'dart:convert';
+import 'validacion_page.dart';
 import 'package:flutter/material.dart';
-import 'validacion_page.dart'; 
+import 'dart:io';
+import 'dart:convert';
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:postgres/postgres.dart';
+import 'package:intl/intl.dart';
 
 class PreoperacionalFormularioPage extends StatefulWidget {
   final Map<String, dynamic> datosServidor;
@@ -8,130 +13,206 @@ class PreoperacionalFormularioPage extends StatefulWidget {
   const PreoperacionalFormularioPage({super.key, required this.datosServidor});
 
   @override
-  State<PreoperacionalFormularioPage> createState() => _PreoperacionalFormularioPageState();
+  _PreoperacionalFormularioPageState createState() => _PreoperacionalFormularioPageState();
 }
 
 class _PreoperacionalFormularioPageState extends State<PreoperacionalFormularioPage> {
-  bool _guardando = false;
-
-  final List<Map<String, dynamic>> _preguntas = [
-    {"id": "docs", "titulo": "1. Documentos del Vehículo", "desc": "SOAT, Tecnomecánica y Tarjeta", "valor": "Bueno"},
-    {"id": "luces", "titulo": "2. Luces y Visibilidad", "desc": "Faros, direccionales, frenos", "valor": "Bueno"},
-    {"id": "frenos", "titulo": "3. Frenos y Aire", "desc": "Sin fugas de aire, pedal funcional", "valor": "Bueno"},
-    {"id": "llantas", "titulo": "4. Llantas y Repuesto", "desc": "Labrado profundo y presión", "valor": "Bueno"},
-    {"id": "fugas", "titulo": "5. Fugas de Fluidos", "desc": "Cero goteos de aceite o agua", "valor": "Bueno"},
-    {"id": "quinta", "titulo": "6. Quinta Rueda", "desc": "Enganche y mangueras conectadas", "valor": "Bueno"},
-    {"id": "cinturon", "titulo": "7. Cinturones", "desc": "Anclajes firmes y sin cortes", "valor": "Bueno"},
-    {"id": "extintor", "titulo": "8. Extintor", "desc": "Cargado (presión verde) y vigente", "valor": "Bueno"},
-    {"id": "kit", "titulo": "9. Kit de Carretera", "desc": "Botiquín, tacos, y absorbente", "valor": "Bueno"},
-    {"id": "conductor", "titulo": "10. Estado Conductor", "desc": "Licencia vigente y descansado", "valor": "Bueno"},
-    {"id": "gps", "titulo": "11. GPS Satelital", "desc": "Equipo transmitiendo correctamente", "valor": "Bueno"},
+  // 11 Preguntas estándar de seguridad
+  final List<String> _preguntas = [
+    "Estado de llantas y rines",
+    "Nivel de aceite y fugas",
+    "Luces (Altas, bajas, direccionales)",
+    "Frenos y presión de aire",
+    "Espejos y vidrios",
+    "Cinturones de seguridad",
+    "Kit de carretera y extintor",
+    "Documentación (SOAT, Tecno)",
+    "Limpiaparabrisas y agua",
+    "Estado de la carrocería/tráiler",
+    "Aseo general del vehículo"
   ];
 
-  final TextEditingController _comentariosController = TextEditingController();
+  // Mapa para guardar las respuestas (por defecto todas 'Bueno')
+  late Map<int, String> _respuestas;
+  final TextEditingController _observacionesController = TextEditingController();
+  
+  // Lógica de fotos de evidencia
+  final List<XFile> _listaFotos = [];
+  final ImagePicker _picker = ImagePicker();
+  bool _enviando = false;
 
-  Future<void> _guardarYContinuar() async {
-    setState(() => _guardando = true);
+  @override
+  void initState() {
+    super.initState();
+    _respuestas = {for (var i = 0; i < _preguntas.length; i++) i: 'Bueno'};
+  }
+
+  Future<void> _tomarFotoFalla() async {
+    if (_listaFotos.length >= 3) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⚠️ Máximo 3 fotos de evidencia")));
+      return;
+    }
+    // AQUÍ ESTÁ EL PRIMER ARREGLO: maxWidth: 800
+    final XFile? foto = await _picker.pickImage(source: ImageSource.camera, imageQuality: 60, maxWidth: 800);
+    if (foto != null) {
+      setState(() => _listaFotos.add(foto));
+    }
+  }
+
+  Future<void> _finalizarCuestionario() async {
+    setState(() => _enviando = true);
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⏳ Guardando inspección en la nube..."), backgroundColor: Colors.orange));
 
     try {
-      // 1. ARMAR EL JSON CON LAS RESPUESTAS
-      Map<String, dynamic> jsonPreoperacional = {
-        "tipo_registro": "DIGITAL",
-        "fecha_registro": DateTime.now().toIso8601String(),
-        "observaciones": _comentariosController.text,
-        "respuestas": {}
-      };
+      int tripIdReal = int.tryParse(widget.datosServidor['trip_id']?.toString() ?? "0") ?? 0;
+      List<String> urlsFotos = [];
 
-      for (var p in _preguntas) {
-        jsonPreoperacional["respuestas"][p['id']] = p['valor'];
+      // 1. SUBIR FOTOS A FIREBASE
+      for (var i = 0; i < _listaFotos.length; i++) {
+        String nombre = "falla_${tripIdReal}_${DateTime.now().millisecondsSinceEpoch}_$i.jpg";
+        Reference ref = FirebaseStorage.instance.ref().child('preoperacionales_fisicos/$nombre');
+        
+        // AQUÍ ESTÁ EL SEGUNDO ARREGLO: SettableMetadata
+        UploadTask uploadTask = ref.putFile(
+          File(_listaFotos[i].path),
+          SettableMetadata(contentType: 'image/jpeg')
+        );
+        
+        TaskSnapshot snapshot = await uploadTask.timeout(const Duration(seconds: 45)); 
+        String url = await snapshot.ref.getDownloadURL();
+        urlsFotos.add(url);
       }
 
-      // 2. GUARDAR EN MEMORIA
-      widget.datosServidor['preoperacional_json'] = jsonEncode(jsonPreoperacional);
+      // 2. CONSTRUIR EL JSON BLINDADO
+      Map<String, dynamic> jsonFinal = {
+        "tipo_registro": "DIGITAL",
+        "fecha_registro": DateTime.now().toIso8601String(),
+        "respuestas": _respuestas.map((k, v) => MapEntry(_preguntas[k], v)),
+        "observaciones": _observacionesController.text,
+        "fotos_evidencia": urlsFotos
+      };
 
-      // Simulamos un pequeño tiempo de carga visual
-      await Future.delayed(const Duration(milliseconds: 800));
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ Preoperacional Digital adjuntado al viaje"), backgroundColor: Colors.green));
-      
-      // 3. REGRESAR AL VIAJE
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => ValidacionViajePage(datosServidor: widget.datosServidor)),
+      // 3. ENVIAR A POSTGRESQL
+      final conn = await Connection.open(
+        Endpoint(host: 'gctsatelital.com', database: 'app_core', username: 'flutter', password: '5cxkdu6lo', port: 5432),
+        settings: const ConnectionSettings(sslMode: SslMode.disable, connectTimeout: Duration(seconds: 15)),
       );
 
+      await conn.execute(
+        "UPDATE flutter_schema.active_trips SET fase_viaje = 'PREOP_LISTO', fecha_preop_app = CURRENT_TIMESTAMP, preoperacional_data = \$2 WHERE trip_id = \$1",
+        parameters: [tripIdReal, jsonEncode(jsonFinal)],
+      );
+      await conn.close();
+
+      // 4. ACTUALIZAR MEMORIA LOCAL Y SALIR
+      widget.datosServidor['fase_viaje'] = 'PREOP_LISTO';
+      widget.datosServidor['preoperacional_json'] = jsonEncode(jsonFinal);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      
+      // Teletransportación segura limpiando el historial
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => ValidacionViajePage(datosServidor: widget.datosServidor)),
+        (route) => false,
+      ); 
+
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("❌ Error interno: $e"), backgroundColor: Colors.red));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("❌ Error subiendo datos: $e"), backgroundColor: Colors.red));
     } finally {
-      if (mounted) setState(() => _guardando = false);
+      if (mounted) setState(() => _enviando = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Preoperacional Digital"), backgroundColor: Colors.blue[900], foregroundColor: Colors.white),
-      body: Column(
-        children: [
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(10),
-              itemCount: _preguntas.length,
-              itemBuilder: (context, index) {
-                final p = _preguntas[index];
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 15),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(p['titulo'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                        Text(p['desc'], style: const TextStyle(color: Colors.grey, fontSize: 13)),
-                        const SizedBox(height: 10),
-                        SegmentedButton<String>(
-                          segments: const [
-                            ButtonSegment(value: "Bueno", label: Text("Bueno", style: TextStyle(fontSize: 12)), icon: Icon(Icons.check_circle, size: 16, color: Colors.green)),
-                            ButtonSegment(value: "Malo", label: Text("Malo", style: TextStyle(fontSize: 12)), icon: Icon(Icons.cancel, size: 16, color: Colors.red)),
-                            ButtonSegment(value: "N/A", label: Text("N/A", style: TextStyle(fontSize: 12)), icon: Icon(Icons.remove_circle, size: 16, color: Colors.grey)),
-                          ],
-                          selected: {p['valor']},
-                          onSelectionChanged: (Set<String> newSelection) {
-                            setState(() => p['valor'] = newSelection.first);
-                          },
-                        ),
-                      ],
-                    ),
+      appBar: AppBar(title: const Text("Inspección Digital"), backgroundColor: Colors.orange[800], foregroundColor: Colors.white),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(15),
+        child: Column(
+          children: [
+            const Text("Marque el estado de cada elemento:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 10),
+            
+            // Lista de preguntas
+            ...List.generate(_preguntas.length, (index) {
+              return Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("${index + 1}. ${_preguntas[index]}", style: const TextStyle(fontWeight: FontWeight.w500)),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: RadioListTile(
+                              title: const Text("Bueno"), value: "Bueno", groupValue: _respuestas[index],
+                              onChanged: (val) => setState(() => _respuestas[index] = val!),
+                            ),
+                          ),
+                          Expanded(
+                            child: RadioListTile(
+                              title: const Text("Malo"), value: "Malo", groupValue: _respuestas[index],
+                              onChanged: (val) => setState(() => _respuestas[index] = val!),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                );
-              },
+                ),
+              );
+            }),
+
+            const Divider(height: 40),
+
+            // Sección de Observaciones y Fotos
+            const Text("OBSERVACIONES Y EVIDENCIAS", style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _observacionesController,
+              maxLines: 3,
+              maxLength: 150,
+              decoration: const InputDecoration(
+                hintText: "Escriba aquí el detalle de cualquier falla encontrada...",
+                border: OutlineInputBorder(),
+              ),
             ),
-          ),
-          
-          Container(
-            padding: const EdgeInsets.all(15),
-            color: Colors.white,
-            child: Column(
+            
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                TextField(
-                  controller: _comentariosController,
-                  decoration: const InputDecoration(labelText: "Observaciones (Opcional)", border: OutlineInputBorder(), prefixIcon: Icon(Icons.comment)),
+                ElevatedButton.icon(
+                  onPressed: _tomarFotoFalla,
+                  icon: const Icon(Icons.camera_alt),
+                  label: Text("Foto (${_listaFotos.length}/3)"),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey),
                 ),
-                const SizedBox(height: 15),
-                SizedBox(
-                  width: double.infinity, height: 50,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-                    onPressed: _guardando ? null : _guardarYContinuar,
-                    icon: _guardando ? const CircularProgressIndicator(color: Colors.white) : const Icon(Icons.save),
-                    label: Text(_guardando ? "GUARDANDO..." : "GUARDAR Y CONTINUAR", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  ),
-                ),
+                if (_listaFotos.isNotEmpty)
+                  IconButton(onPressed: () => setState(() => _listaFotos.clear()), icon: const Icon(Icons.delete, color: Colors.red))
               ],
             ),
-          ),
-        ],
+
+            const SizedBox(height: 30),
+            
+            // Botón Final
+            SizedBox(
+              width: double.infinity, height: 60,
+              child: ElevatedButton(
+                onPressed: _enviando ? null : _finalizarCuestionario,
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green[700], foregroundColor: Colors.white),
+                child: _enviando 
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : const Text("FINALIZAR E INVIAR", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
       ),
     );
   }

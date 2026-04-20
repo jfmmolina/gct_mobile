@@ -51,12 +51,15 @@ class _LoginPageState extends State<LoginPage> {
 
       int cedulaIngresada = int.tryParse(_cedulaController.text) ?? 0;
       
-      // Consulta ADAPTADA a las columnas que ya tienes en pgAdmin
       final result = await conn.execute(
         r'''SELECT trip_id, driver_cc, driver_name, driver_cellphone, truck_plate, trailer_plate, 
             route_alias, user_preferred_name, customer_name, truck_odometer, mapa_iframe_url, 
-            effective_hours, unloading_schedule, loading_schedule
-            FROM flutter_schema.active_trips WHERE driver_cc = $1 LIMIT 1''',
+            effective_hours, unloading_schedule, loading_schedule, fase_viaje, preoperacional_data
+            FROM flutter_schema.active_trips 
+            WHERE driver_cc = $1 
+              AND (current_state IS NULL OR current_state != 'FINALIZADO')
+            ORDER BY trip_id DESC 
+            LIMIT 1''',
         parameters: [cedulaIngresada],
       );
 
@@ -65,7 +68,6 @@ class _LoginPageState extends State<LoginPage> {
       if (result.isNotEmpty) {
         final fila = result[0];
         
-        // Mapeo seguro con las columnas existentes
         Map<String, dynamic> datosReales = {
           'trip_id': fila[0],
           'cedula': fila[1]?.toString() ?? "",
@@ -81,6 +83,8 @@ class _LoginPageState extends State<LoginPage> {
           'effective_hours': fila[11] ?? 0, 
           'fecha_descargue': fila[12] is DateTime ? fila[12] : DateTime.now().add(const Duration(hours: 24)), 
           'fecha_cargue': fila[13] is DateTime ? fila[13] : DateTime.now(),
+          'fase_viaje': fila[14]?.toString() ?? "ASIGNADO",
+          'preoperacional_json': fila[15]?.toString() ?? "{}",
         };
 
         setState(() => _mensajeServidor = "¡Viaje encontrado!");
@@ -150,10 +154,40 @@ class _DashboardPageState extends State<DashboardPage> {
     currentLat = widget.lat;
     currentLng = widget.lng;
 
+    // --- MEJORA 1: LIMPIEZA DEL ENLACE DEL MAPA ---
+    String urlMapa = widget.datosViaje['mapa_url']?.toString().trim() ?? "";
+    
+    // Si viene un iframe completo, extraemos solo el link
+    if (urlMapa.contains('src="')) {
+      final startIndex = urlMapa.indexOf('src="') + 5;
+      final endIndex = urlMapa.indexOf('"', startIndex);
+      if (startIndex > 4 && endIndex > startIndex) {
+        urlMapa = urlMapa.substring(startIndex, endIndex);
+      }
+    }
+
+    // Si la URL queda vacía, ponemos un mapa de rescate
+    if (urlMapa.isEmpty || !urlMapa.startsWith("http")) {
+      urlMapa = "https://www.google.com/maps";
+    }
+
+    // --- AQUÍ INSERTAMOS EL DISFRAZ Y EL ESPÍA ---
     _webController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(const Color(0x00000000))
-      ..loadRequest(Uri.parse(widget.datosViaje['mapa_url'] ?? "https://google.com"));
+      ..setBackgroundColor(Colors.white) 
+      ..setUserAgent("Mozilla/5.0 (Linux; Android 10; SM-G975F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36") // 👈 Disfraz de Chrome
+      ..setOnConsoleMessage((JavaScriptConsoleMessage message) {
+        debugPrint("🌐 JS DE LA WEB DICE: ${message.message}");
+      })
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onWebResourceError: (WebResourceError error) {
+            // 👈 Espía que imprimirá los errores en la consola de VS Code
+            debugPrint("🚨 ERROR DEL MAPA: ${error.description} | Código: ${error.errorCode}");
+          },
+        ),
+      )
+      ..loadRequest(Uri.parse(urlMapa));
 
     _procesarSeguridad();
     _timer = Timer.periodic(const Duration(seconds: 5), (timer) {
@@ -185,7 +219,7 @@ class _DashboardPageState extends State<DashboardPage> {
       int m = diff.inMinutes % 60;
       tiempoRestanteTexto = "Quedan: ${h}h ${m}m";
       colorBarra = Colors.green;
-      permitirFinalizar = false; // Se bloquea mientras haya tiempo
+      permitirFinalizar = false; 
     }
 
     if (mounted) setState(() {});
@@ -223,9 +257,12 @@ class _DashboardPageState extends State<DashboardPage> {
           Padding(
             padding: const EdgeInsets.only(right: 8.0),
             child: ElevatedButton.icon(
+              // --- MEJORA 2: ESTILO DEL BOTÓN BLOQUEADO ---
               style: ElevatedButton.styleFrom(
                 backgroundColor: permitirFinalizar ? Colors.redAccent : Colors.grey[400],
                 foregroundColor: Colors.white,
+                disabledBackgroundColor: Colors.black38, // Fondo oscuro cuando está bloqueado
+                disabledForegroundColor: Colors.white,   // Letra blanca cuando está bloqueado
                 padding: const EdgeInsets.symmetric(horizontal: 10)
               ),
               icon: Icon(permitirFinalizar ? Icons.flag : Icons.lock_clock, size: 16),
