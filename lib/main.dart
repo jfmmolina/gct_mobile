@@ -49,12 +49,14 @@ class _LoginPageState extends State<LoginPage> {
         settings: const ConnectionSettings(sslMode: SslMode.disable, connectTimeout: Duration(seconds: 15)),
       );
 
-      int cedulaIngresada = int.tryParse(_cedulaController.text) ?? 0;
+      String cedulaIngresada = _cedulaController.text.trim();
       
       final result = await conn.execute(
         r'''SELECT trip_id, driver_cc, driver_name, driver_cellphone, truck_plate, trailer_plate, 
             route_alias, user_preferred_name, customer_name, truck_odometer, mapa_iframe_url, 
-            effective_hours, unloading_schedule, loading_schedule, fase_viaje, preoperacional_data
+            effective_hours, unloading_schedule, loading_schedule, fase_viaje, preoperacional_data,
+            documento_cliente, manifiesto_rndc, url_pdf_manifiesto, 
+            current_state, permitir_cierre_manual
             FROM flutter_schema.active_trips 
             WHERE driver_cc = $1 
               AND (current_state IS NULL OR current_state != 'FINALIZADO')
@@ -85,6 +87,11 @@ class _LoginPageState extends State<LoginPage> {
           'fecha_cargue': fila[13] is DateTime ? fila[13] : DateTime.now(),
           'fase_viaje': fila[14]?.toString() ?? "ASIGNADO",
           'preoperacional_json': fila[15]?.toString() ?? "{}",
+          'documento_cliente': fila[16]?.toString() ?? "",
+          'manifiesto_rndc': fila[17]?.toString() ?? "",
+          'url_pdf_manifiesto': fila[18]?.toString() ?? "",
+          'estado_servidor': fila[19]?.toString().trim().toUpperCase() ?? "",
+          'permite_cierre': fila[20]?.toString().trim().toUpperCase() == "TRUE",
         };
 
         setState(() => _mensajeServidor = "¡Viaje encontrado!");
@@ -175,7 +182,7 @@ class _DashboardPageState extends State<DashboardPage> {
     _webController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.white) 
-      ..setUserAgent("Mozilla/5.0 (Linux; Android 10; SM-G975F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36") // 👈 Disfraz de Chrome
+      //..setUserAgent("Mozilla/5.0 (Linux; Android 10; SM-G975F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36") // 👈 Disfraz de Chrome
       ..setOnConsoleMessage((JavaScriptConsoleMessage message) {
         debugPrint("🌐 JS DE LA WEB DICE: ${message.message}");
       })
@@ -210,8 +217,17 @@ class _DashboardPageState extends State<DashboardPage> {
 
     final diff = fin.difference(ahora);
     
-    if (diff.isNegative) {
-      tiempoRestanteTexto = "VIGENCIA SUPERADA";
+    // --- AQUÍ ESTÁ TU LÓGICA MAESTRA ---
+    String estadoActu = widget.datosViaje['estado_servidor'] ?? "";
+    bool permisoManual = widget.datosViaje['permite_cierre'] ?? false;
+
+    // Se libera si: Tiempo agotado O dice "DESCARGA" O tú pusiste TRUE
+    bool debeLiberar = diff.isNegative || 
+                       estadoActu.contains("DESCARGA") || 
+                       permisoManual == true;
+
+    if (debeLiberar) {
+      tiempoRestanteTexto = permisoManual ? "CIERRE AUTORIZADO" : "LLEGADA A DESTINO";
       colorBarra = Colors.red;
       permitirFinalizar = true; 
     } else {

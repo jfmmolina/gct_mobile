@@ -1,3 +1,4 @@
+import 'package:url_launcher/url_launcher.dart';
 import 'preoperacional_opciones_page.dart';
 import 'package:flutter/material.dart';
 import 'dart:io';
@@ -355,6 +356,7 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
               const Text("Por favor registre su preoperacional antes de ingresar a la zona de carga.", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 13)),
             ],
 
+            
             // 🟢 FASE 3: PREOP_LISTO (Formulario Final)
             if (faseActual == 'PREOP_LISTO') ...[
               Card(
@@ -379,6 +381,83 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
                               style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[800], foregroundColor: Colors.white),
                             ),
                           ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // --- NUEVA TARJETA: DOCUMENTACIÓN DEL VIAJE ---
+              const SizedBox(height: 10),
+              Card(
+                color: Colors.blue[50],
+                child: Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text("DOCUMENTACIÓN DEL VIAJE", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+                      
+                      // 1. Campo del Cliente (Dinámico)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.folder_shared, color: Colors.blue),
+                        title: Text("Documento ${widget.datosServidor['cliente_nombre'] ?? 'Cliente'}"),
+                        subtitle: Text(
+                          widget.datosServidor['documento_cliente']?.toString().isNotEmpty == true 
+                            ? widget.datosServidor['documento_cliente'].toString() 
+                            : "Pendiente desde el servidor",
+                          style: TextStyle(
+                            color: widget.datosServidor['documento_cliente']?.toString().isNotEmpty == true ? Colors.black87 : Colors.red,
+                            fontStyle: widget.datosServidor['documento_cliente']?.toString().isNotEmpty == true ? FontStyle.normal : FontStyle.italic
+                          )
+                        ),
+                      ),
+                      
+                      const Divider(height: 0),
+
+                      // 2. Campo del Manifiesto
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.assignment, color: Colors.orange),
+                        title: const Text("Manifiesto RNDC"),
+                        subtitle: Text(
+                          widget.datosServidor['manifiesto_rndc']?.toString().isNotEmpty == true 
+                            ? widget.datosServidor['manifiesto_rndc'].toString() 
+                            : "No generado",
+                        ),
+                        trailing: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[800], foregroundColor: Colors.white),
+                          icon: const Icon(Icons.visibility, size: 16),
+                          label: const Text("Ver"),
+                          onPressed: () async {
+                            String urlDoc = widget.datosServidor['url_pdf_manifiesto']?.toString() ?? "";
+                            
+                            if (urlDoc.isNotEmpty && urlDoc.startsWith("http")) {
+                              final Uri uri = Uri.parse(urlDoc);
+                              try {
+                                if (await canLaunchUrl(uri)) {
+                                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                } else {
+                                  debugPrint("No se pudo abrir la URL: $urlDoc");
+                                }
+                              } catch (e) {
+                                debugPrint("Error al abrir PDF: $e");
+                              }
+                            } else {
+                              if(context.mounted) {
+                                showDialog(
+                                  context: context, 
+                                  builder: (context) => AlertDialog(
+                                    title: const Text("⚠️ Documento no disponible"), 
+                                    content: const Text("El servidor aún no ha cargado el archivo PDF o la imagen de este manifiesto."), 
+                                    actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("ENTENDIDO"))]
+                                  )
+                                );
+                              }
+                            }
+                          },
                         ),
                       ),
                     ],
@@ -430,7 +509,7 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
                 ),
               ),
             ],
-
+            
             // 🔵 FASE 4: VIAJE EN RUTA (ÉXITO)
             if (faseActual == 'EN_RUTA') ...[
               const SizedBox(height: 20),

@@ -1,3 +1,6 @@
+import 'package:path_provider/path_provider.dart';
+import 'package:intl/intl.dart';
+import 'package:image/image.dart' as img;
 import 'package:flutter/material.dart';
 import 'package:postgres/postgres.dart';
 import 'dart:io';
@@ -31,9 +34,48 @@ class _FinalizarViajePageState extends State<FinalizarViajePage> {
   bool _enviando = false;
 
   Future<void> _tomarFoto() async {
-    final XFile? photo = await _picker.pickImage(source: ImageSource.camera, imageQuality: 30);
-    if (photo != null) {
-      setState(() { _fotoFinal = File(photo.path); });
+    try {
+      final XFile? photo = await _picker.pickImage(
+        source: ImageSource.camera, 
+        imageQuality: 70, 
+        maxWidth: 1000
+      );
+
+      if (photo != null) {
+        setState(() => _enviando = true);
+
+        final bytes = await photo.readAsBytes();
+        final tempDir = await getTemporaryDirectory();
+        
+        img.Image? imagenDecodificada = img.decodeImage(bytes);
+        
+        if (imagenDecodificada != null) {
+          // Marca de agua específica para el Fin de Viaje
+          String fechaHora = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
+          String coordenadas = "GPS: ${widget.currentLat.toStringAsFixed(5)}, ${widget.currentLng.toStringAsFixed(5)}";
+          String marcaAgua = "GCT FIN VIAJE | $fechaHora | $coordenadas";
+
+          img.drawString(
+            imagenDecodificada, 
+            marcaAgua, 
+            font: img.arial24, 
+            x: 20, 
+            y: imagenDecodificada.height - 50, 
+            color: img.ColorRgb8(255, 255, 0)
+          );
+
+          final File archivoProcesado = File('${tempDir.path}/cierre_temp.jpg');
+          await archivoProcesado.writeAsBytes(img.encodeJpg(imagenDecodificada, quality: 85));
+
+          setState(() {
+            _fotoFinal = archivoProcesado;
+            _enviando = false;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("❌ Error foto final: $e");
+      if (mounted) setState(() => _enviando = false);
     }
   }
 

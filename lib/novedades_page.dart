@@ -1,3 +1,6 @@
+import 'package:path_provider/path_provider.dart'; // Para guardar el archivo procesado
+import 'package:intl/intl.dart';               // Para el formato de fecha
+import 'package:image/image.dart' as img;      // Para "dibujar" en la foto
 import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -27,9 +30,51 @@ class _NovedadesPageState extends State<NovedadesPage> {
   bool _enviando = false;
 
   Future<void> _tomarFoto() async {
-    final XFile? photo = await _picker.pickImage(source: ImageSource.camera, imageQuality: 50);
-    if (photo != null) {
-      setState(() { _fotosNovedad.add(File(photo.path)); });
+    try {
+      final XFile? photo = await _picker.pickImage(
+        source: ImageSource.camera, 
+        imageQuality: 70, // Compresión inicial
+        maxWidth: 1000    // Tamaño máximo para no saturar la red
+      );
+
+      if (photo != null) {
+        setState(() => _enviando = true); // Usamos el indicador de carga
+
+        final bytes = await photo.readAsBytes();
+        final tempDir = await getTemporaryDirectory();
+        
+        // Decodificamos la imagen para trabajar en ella
+        img.Image? imagenDecodificada = img.decodeImage(bytes);
+        
+        if (imagenDecodificada != null) {
+          // 1. Preparamos el texto (Fecha + GPS de Montreal/Android)
+          String fechaHora = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
+          String coordenadas = "GPS: ${widget.lat.toStringAsFixed(5)}, ${widget.lng.toStringAsFixed(5)}";
+          String marcaAgua = "GCT NOVEDAD | $fechaHora | $coordenadas";
+
+          // 2. Dibujamos la marca de agua (Letras amarillas en la parte inferior)
+          img.drawString(
+            imagenDecodificada, 
+            marcaAgua, 
+            font: img.arial24, 
+            x: 20, 
+            y: imagenDecodificada.height - 50, 
+            color: img.ColorRgb8(255, 255, 0) // Amarillo brillante
+          );
+
+          // 3. Guardamos la imagen procesada en un archivo temporal
+          final File archivoProcesado = File('${tempDir.path}/novedad_temp.jpg');
+          await archivoProcesado.writeAsBytes(img.encodeJpg(imagenDecodificada, quality: 85));
+
+          setState(() {
+            _fotosNovedad.add(archivoProcesado);
+            _enviando = false;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("❌ Error procesando foto de novedad: $e");
+      if (mounted) setState(() => _enviando = false);
     }
   }
 
