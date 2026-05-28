@@ -303,43 +303,43 @@ class _DashboardPageState extends State<DashboardPage> {
         children: [
           WebViewWidget(controller: _webController),
           
-          Positioned(
-            top: 12, left: 15, right: 15,
-            child: SafeArea(
-              child: Card(
-                elevation: 10, 
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)), 
-                child: Padding(
-                  padding: const EdgeInsets.all(15.0), 
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min, 
-                    children: [
-                      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                        Text("VIGENCIA (${widget.datosViaje['effective_hours']}h)", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 9, color: Colors.blueGrey)),
-                        Text(tiempoRestanteTexto, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: colorBarra)),
-                      ]),
-                      const SizedBox(height: 10),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: LinearProgressIndicator(
-                          value: porcentajeTiempo,
-                          minHeight: 14,
-                          backgroundColor: Colors.grey[200],
-                          valueColor: AlwaysStoppedAnimation<Color>(colorBarra),
-                        ),
-                      ),
-                      const SizedBox(height: 15),
-                      Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-                        _stat("Km/h", "$velocidad"),
-                        _stat("ID Viaje", "${widget.datosViaje['trip_id']}"),
-                        _stat("GPS", status.toUpperCase()),
-                      ]),
-                    ]
-                  )
-                ),
-              ),
-            ),
-          ), 
+          // Positioned(
+          //   top: 12, left: 15, right: 15,
+          //   child: SafeArea(
+          //     child: Card(
+          //       elevation: 10, 
+          //       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)), 
+          //       child: Padding(
+          //         padding: const EdgeInsets.all(15.0), 
+          //         child: Column(
+          //           mainAxisSize: MainAxisSize.min, 
+          //           children: [
+          //             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          //               Text("VIGENCIA (${widget.datosViaje['effective_hours']}h)", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 9, color: Colors.blueGrey)),
+          //               Text(tiempoRestanteTexto, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: colorBarra)),
+          //             ]),
+          //             const SizedBox(height: 10),
+          //             ClipRRect(
+          //               borderRadius: BorderRadius.circular(10),
+          //               child: LinearProgressIndicator(
+          //                 value: porcentajeTiempo,
+          //                 minHeight: 14,
+          //                 backgroundColor: Colors.grey[200],
+          //                 valueColor: AlwaysStoppedAnimation<Color>(colorBarra),
+          //               ),
+          //             ),
+          //             const SizedBox(height: 15),
+          //             Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+          //               _stat("Km/h", "$velocidad"),
+          //               _stat("ID Viaje", "${widget.datosViaje['trip_id']}"),
+          //               _stat("GPS", status.toUpperCase()),
+          //             ]),
+          //           ]
+          //         )
+          //       ),
+          //     ),
+          //   ),
+          // ), 
         ],
       ),
     );
