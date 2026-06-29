@@ -13,6 +13,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:postgres/postgres.dart'; 
 import 'finalizar_page.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'registrar_guia_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized(); 
@@ -293,11 +294,49 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => NovedadesPage(datosViaje: widget.datosViaje, lat: currentLat, lng: currentLng))),
-        backgroundColor: Colors.red,
-        icon: const Icon(Icons.warning_amber_rounded, color: Colors.white),
-        label: const Text("NOVEDAD", style: TextStyle(color: Colors.white)),
+      floatingActionButton: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          // 1. BOTÓN NUEVO: Registrar Guía en Ruta (Azul)
+          FloatingActionButton.small(
+            heroTag: "btn_guia",
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => RegistrarGuiaPage(datosViaje: widget.datosViaje)),
+              );
+            },
+            backgroundColor: Colors.blue[800],
+            foregroundColor: Colors.white,
+            child: const Icon(Icons.assignment_turned_in),
+          ),
+          const SizedBox(height: 12),
+
+          // 2. Botón para Recargar el Mapa (Blanco)
+          FloatingActionButton.small(
+            heroTag: "btn_reload",
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("🔄 Actualizando ruta..."), duration: Duration(seconds: 1))
+              );
+              _webController.reload(); 
+            },
+            backgroundColor: Colors.white,
+            foregroundColor: Colors.blue[900],
+            child: const Icon(Icons.refresh),
+          ),
+          const SizedBox(height: 12),
+          
+          // 3. Tu botón rojo de Novedad original (Rojo)
+          FloatingActionButton.extended(
+            heroTag: "btn_novedad",
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => NovedadesPage(datosViaje: widget.datosViaje, lat: currentLat, lng: currentLng))),
+            backgroundColor: Colors.red,
+            icon: const Icon(Icons.warning_amber_rounded, color: Colors.white),
+            label: const Text("NOVEDAD", style: TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
       body: Stack(
         children: [

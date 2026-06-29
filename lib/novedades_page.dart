@@ -47,10 +47,14 @@ class _NovedadesPageState extends State<NovedadesPage> {
         img.Image? imagenDecodificada = img.decodeImage(bytes);
         
         if (imagenDecodificada != null) {
-          // 1. Preparamos el texto (Fecha + GPS de Montreal/Android)
+          // 1. Preparamos el texto extrayendo placa y viaje
+          String placa = widget.datosViaje['truck_plate']?.toString() ?? "SIN_PLACA";
+          String tripId = widget.datosViaje['trip_id']?.toString() ?? "0";
           String fechaHora = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
           String coordenadas = "GPS: ${widget.lat.toStringAsFixed(5)}, ${widget.lng.toStringAsFixed(5)}";
-          String marcaAgua = "GCT NOVEDAD | $fechaHora | $coordenadas";
+          
+          // Construimos la nueva marca de agua
+          String marcaAgua = "GCT NOVEDAD | $placa | $tripId | $fechaHora | $coordenadas";
 
           // 2. Dibujamos la marca de agua (Letras amarillas en la parte inferior)
           img.drawString(

@@ -492,7 +492,7 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
                 width: double.infinity, height: 55,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.green, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-                  onPressed: (_guiaController.text.isNotEmpty && _odometroController.text.isNotEmpty && !_subiendoViaje)
+                  onPressed: (_odometroController.text.isNotEmpty && !_subiendoViaje)
                     ? () {
                         int odoNuevo = int.tryParse(_odometroController.text) ?? 0;
                         int odoBaseDatos = int.tryParse(widget.datosServidor['odometro_bd']?.toString() ?? "0") ?? 0;
