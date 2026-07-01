@@ -48,7 +48,7 @@ class _NovedadesPageState extends State<NovedadesPage> {
         
         if (imagenDecodificada != null) {
           // 1. Preparamos el texto extrayendo placa y viaje
-          String placa = widget.datosViaje['truck_plate']?.toString() ?? "SIN_PLACA";
+          String placa = widget.datosViaje['placa_cabezote']?.toString() ?? "SIN_PLACA";
           String tripId = widget.datosViaje['trip_id']?.toString() ?? "0";
           String fechaHora = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
           String coordenadas = "GPS: ${widget.lat.toStringAsFixed(5)}, ${widget.lng.toStringAsFixed(5)}";
