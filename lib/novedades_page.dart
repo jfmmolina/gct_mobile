@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:postgres/postgres.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:geolocator/geolocator.dart';
 
 class NovedadesPage extends StatefulWidget {
   final Map<String, dynamic> datosViaje;
@@ -29,44 +30,66 @@ class _NovedadesPageState extends State<NovedadesPage> {
   final ImagePicker _picker = ImagePicker();
   bool _enviando = false;
 
+  // NUEVAS VARIABLES: Guardarán el GPS real de la Novedad
+  double _latitudReal = 0.0;
+  double _longitudReal = 0.0;
+
   Future<void> _tomarFoto() async {
     try {
+      // 1. OBTENER GPS REAL ANTES DE LA FOTO
+      setState(() => _enviando = true);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Buscando señal GPS..."), duration: Duration(seconds: 1)));
+      
+      Position? position;
+      LocationPermission permiso = await Geolocator.checkPermission();
+      if (permiso == LocationPermission.denied) permiso = await Geolocator.requestPermission(); 
+      if (permiso == LocationPermission.whileInUse || permiso == LocationPermission.always) {
+        // Pedimos la ubicación con alta precisión, esperando máximo 5 segundos
+        position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high, timeLimit: const Duration(seconds: 5));
+        if (position != null) {
+          _latitudReal = position.latitude;
+          _longitudReal = position.longitude;
+        } else {
+          // Si el GPS falla, usamos las coordenadas de respaldo que traía el mapa
+          _latitudReal = widget.lat;
+          _longitudReal = widget.lng;
+        }
+      } else {
+         _latitudReal = widget.lat;
+         _longitudReal = widget.lng;
+      }
+
+      setState(() => _enviando = false);
+
+      // 2. ABRIR CÁMARA
       final XFile? photo = await _picker.pickImage(
         source: ImageSource.camera, 
-        imageQuality: 70, // Compresión inicial
-        maxWidth: 1000    // Tamaño máximo para no saturar la red
+        imageQuality: 70,
+        maxWidth: 1000    
       );
 
       if (photo != null) {
-        setState(() => _enviando = true); // Usamos el indicador de carga
+        setState(() => _enviando = true); 
 
         final bytes = await photo.readAsBytes();
         final tempDir = await getTemporaryDirectory();
-        
-        // Decodificamos la imagen para trabajar en ella
         img.Image? imagenDecodificada = img.decodeImage(bytes);
         
         if (imagenDecodificada != null) {
-          // 1. Preparamos el texto extrayendo placa y viaje
           String placa = widget.datosViaje['placa_cabezote']?.toString() ?? "SIN_PLACA";
           String tripId = widget.datosViaje['trip_id']?.toString() ?? "0";
           String fechaHora = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
-          String coordenadas = "GPS: ${widget.lat.toStringAsFixed(5)}, ${widget.lng.toStringAsFixed(5)}";
           
-          // Construimos la nueva marca de agua
+          // 👇 USAMOS LAS COORDENADAS REALES RECIÉN OBTENIDAS
+          String coordenadas = "GPS: ${_latitudReal.toStringAsFixed(5)}, ${_longitudReal.toStringAsFixed(5)}";
+          
           String marcaAgua = "GCT NOVEDAD | $placa | $tripId | $fechaHora | $coordenadas";
 
-          // 2. Dibujamos la marca de agua (Letras amarillas en la parte inferior)
           img.drawString(
-            imagenDecodificada, 
-            marcaAgua, 
-            font: img.arial24, 
-            x: 20, 
-            y: imagenDecodificada.height - 50, 
-            color: img.ColorRgb8(255, 255, 0) // Amarillo brillante
+            imagenDecodificada, marcaAgua, 
+            font: img.arial24, x: 20, y: imagenDecodificada.height - 50, color: img.ColorRgb8(255, 255, 0) 
           );
 
-          // 3. Guardamos la imagen procesada en un archivo temporal
           final File archivoProcesado = File('${tempDir.path}/novedad_temp.jpg');
           await archivoProcesado.writeAsBytes(img.encodeJpg(imagenDecodificada, quality: 85));
 
@@ -128,8 +151,8 @@ class _NovedadesPageState extends State<NovedadesPage> {
           int.tryParse(widget.datosViaje['cedula']?.toString() ?? "0") ?? 0,
           motivo,
           _comentarioController.text,
-          widget.lat.toString(),
-          widget.lng.toString(),
+          _latitudReal != 0.0 ? _latitudReal.toString() : widget.lat.toString(), // GPS Real
+          _longitudReal != 0.0 ? _longitudReal.toString() : widget.lng.toString(), //GPS Real
           urls.join(',')
         ],
       );
