@@ -1,8 +1,12 @@
 
-git.dart_tool/
+.dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
 build/
 ios/Flutter/Generated.xcconfig
+
+# Archivos de seguridad de Google Play
+key.properties
+**/*.jks
