@@ -6,6 +6,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:postgres/postgres.dart';
 import 'package:intl/intl.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:image/image.dart' as img;
+import 'package:path_provider/path_provider.dart';
 
 class PreoperacionalFormularioPage extends StatefulWidget {
   final Map<String, dynamic> datosServidor;
@@ -32,19 +35,75 @@ class _PreoperacionalFormularioPageState extends State<PreoperacionalFormularioP
     "Aseo general del vehículo"
   ];
 
-  // Mapa para guardar las respuestas (por defecto todas 'Bueno')
   late Map<int, String> _respuestas;
   final TextEditingController _observacionesController = TextEditingController();
   
-  // Lógica de fotos de evidencia
-  final List<XFile> _listaFotos = [];
+  final List<File> _listaFotos = []; // Cambiado a File para manejar la foto sellada
   final ImagePicker _picker = ImagePicker();
   bool _enviando = false;
+  bool _procesandoFoto = false;
 
   @override
   void initState() {
     super.initState();
     _respuestas = {for (var i = 0; i < _preguntas.length; i++) i: 'Bueno'};
+  }
+  
+  // --- NUEVA FUNCIÓN MEJORADA: SELLO DE SEGURIDAD PARA LAS FALLAS ---
+  Future<File> _aplicarSelloDeAgua(XFile fotoOriginal) async {
+    try {
+      String placa = widget.datosServidor['placa_cabezote'] ?? widget.datosServidor['vehiculo'] ?? "S/P";
+      String fechaHora = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
+      String latLngStr = "Buscando...";
+
+      // 1. Manejo seguro y con tiempo límite para el GPS
+      try {
+        LocationPermission permiso = await Geolocator.checkPermission();
+        if (permiso == LocationPermission.denied) {
+          permiso = await Geolocator.requestPermission();
+        }
+
+        if (permiso == LocationPermission.whileInUse || permiso == LocationPermission.always) {
+          Position posicion = await Geolocator.getCurrentPosition(
+              desiredAccuracy: LocationAccuracy.high,
+              timeLimit: const Duration(seconds: 5) // Máximo 5 segundos
+          );
+          latLngStr = "Lat: ${posicion.latitude.toStringAsFixed(4)}, Lng: ${posicion.longitude.toStringAsFixed(4)}";
+        } else {
+          latLngStr = "GPS Sin Permiso";
+        }
+      } catch (e) {
+        debugPrint("Error GPS: $e");
+        latLngStr = "GPS No disponible";
+      }
+
+      // 2. El texto siempre se armará, haya o no haya señal
+      String textoSello = "GCT | $placa | $fechaHora | $latLngStr";
+
+      final bytes = await fotoOriginal.readAsBytes();
+      img.Image? imagen = img.decodeImage(bytes);
+      
+      if (imagen != null) {
+        img.drawString(
+          imagen,
+          textoSello,
+          font: img.arial24,
+          x: 15,
+          y: imagen.height - 35,
+          color: img.ColorRgb8(255, 255, 255), // Texto Blanco Corporativo
+        );
+
+        final directorio = await getTemporaryDirectory();
+        final rutaNueva = '${directorio.path}/falla_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        File archivoModificado = File(rutaNueva);
+        await archivoModificado.writeAsBytes(img.encodeJpg(imagen, quality: 85));
+        
+        return archivoModificado;
+      }
+    } catch (e) {
+      debugPrint("Error fatal aplicando sello: $e");
+    }
+    return File(fotoOriginal.path); // Último recurso de seguridad
   }
 
   Future<void> _tomarFotoFalla() async {
@@ -52,10 +111,23 @@ class _PreoperacionalFormularioPageState extends State<PreoperacionalFormularioP
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⚠️ Máximo 3 fotos de evidencia")));
       return;
     }
-    // AQUÍ ESTÁ EL PRIMER ARREGLO: maxWidth: 800
-    final XFile? foto = await _picker.pickImage(source: ImageSource.camera, imageQuality: 60, maxWidth: 800);
-    if (foto != null) {
-      setState(() => _listaFotos.add(foto));
+    
+    if (_procesandoFoto) return;
+    setState(() => _procesandoFoto = true);
+
+    try {
+      final XFile? foto = await _picker.pickImage(source: ImageSource.camera, imageQuality: 70, maxWidth: 800);
+      
+      if (foto != null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⏳ Aplicando sello de seguridad corporativo..."), backgroundColor: Colors.orange));
+        
+        File archivoFallaSellada = await _aplicarSelloDeAgua(foto);
+        setState(() => _listaFotos.add(archivoFallaSellada));
+      }
+    } catch (e) {
+      debugPrint("Error capturando foto de falla: $e");
+    } finally {
+      if (mounted) setState(() => _procesandoFoto = false);
     }
   }
 
@@ -67,14 +139,13 @@ class _PreoperacionalFormularioPageState extends State<PreoperacionalFormularioP
       int tripIdReal = int.tryParse(widget.datosServidor['trip_id']?.toString() ?? "0") ?? 0;
       List<String> urlsFotos = [];
 
-      // 1. SUBIR FOTOS A FIREBASE
+      // 1. SUBIR FOTOS (Ya selladas) A FIREBASE
       for (var i = 0; i < _listaFotos.length; i++) {
         String nombre = "falla_${tripIdReal}_${DateTime.now().millisecondsSinceEpoch}_$i.jpg";
         Reference ref = FirebaseStorage.instance.ref().child('preoperacionales_fisicos/$nombre');
         
-        // AQUÍ ESTÁ EL SEGUNDO ARREGLO: SettableMetadata
         UploadTask uploadTask = ref.putFile(
-          File(_listaFotos[i].path),
+          _listaFotos[i], // Aquí subimos el File directo
           SettableMetadata(contentType: 'image/jpeg')
         );
         
@@ -111,7 +182,7 @@ class _PreoperacionalFormularioPageState extends State<PreoperacionalFormularioP
       if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       
-      // Teletransportación segura limpiando el historial
+      // Teletransportación segura
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (context) => ValidacionViajePage(datosServidor: widget.datosServidor)),
@@ -187,10 +258,12 @@ class _PreoperacionalFormularioPageState extends State<PreoperacionalFormularioP
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 ElevatedButton.icon(
-                  onPressed: _tomarFotoFalla,
-                  icon: const Icon(Icons.camera_alt),
-                  label: Text("Foto (${_listaFotos.length}/3)"),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey),
+                  onPressed: (_enviando || _procesandoFoto) ? null : _tomarFotoFalla,
+                  icon: _procesandoFoto 
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Icon(Icons.camera_alt),
+                  label: Text(_procesandoFoto ? "Procesando..." : "Foto (${_listaFotos.length}/3)"),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey, foregroundColor: Colors.white),
                 ),
                 if (_listaFotos.isNotEmpty)
                   IconButton(onPressed: () => setState(() => _listaFotos.clear()), icon: const Icon(Icons.delete, color: Colors.red))
@@ -207,7 +280,7 @@ class _PreoperacionalFormularioPageState extends State<PreoperacionalFormularioP
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.green[700], foregroundColor: Colors.white),
                 child: _enviando 
                   ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text("FINALIZAR E INVIAR", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  : const Text("FINALIZAR E ENVIAR", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               ),
             ),
             const SizedBox(height: 20),

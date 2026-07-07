@@ -5,6 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:postgres/postgres.dart';
+import 'package:image/image.dart' as img;
+import 'package:geolocator/geolocator.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:intl/intl.dart';
 
 // Importa tu página de validación actual para poder "Saltar" a ella
 import 'validacion_page.dart'; 
@@ -20,9 +24,44 @@ class PreoperacionalOpcionesPage extends StatefulWidget {
 
 class _PreoperacionalOpcionesPageState extends State<PreoperacionalOpcionesPage> {
   
-  // Función para capturar foto del físico
   bool _subiendoFoto = false;
 
+  // --- NUEVA FUNCIÓN: SELLO DE SEGURIDAD ---
+  Future<File> _aplicarSelloDeAgua(XFile fotoOriginal) async {
+    try {
+      String placa = widget.datosServidor['placa_cabezote'] ?? widget.datosServidor['vehiculo'] ?? "S/P";
+      
+      Position posicion = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      String fechaHora = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
+      String textoSello = "GCT | $placa | $fechaHora | Lat: ${posicion.latitude.toStringAsFixed(4)}, Lng: ${posicion.longitude.toStringAsFixed(4)}";
+
+      final bytes = await fotoOriginal.readAsBytes();
+      img.Image? imagen = img.decodeImage(bytes);
+      
+      if (imagen != null) {
+        img.drawString(
+          imagen,
+          textoSello,
+          font: img.arial24,
+          x: 15,
+          y: imagen.height - 35,
+          color: img.ColorRgb8(255, 255, 255), // Texto Blanco
+        );
+
+        final directorio = await getTemporaryDirectory();
+        final rutaNueva = '${directorio.path}/sello_fisico_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        File archivoModificado = File(rutaNueva);
+        await archivoModificado.writeAsBytes(img.encodeJpg(imagen, quality: 85));
+        
+        return archivoModificado;
+      }
+    } catch (e) {
+      debugPrint("Error aplicando sello: $e");
+    }
+    return File(fotoOriginal.path); // Si falla el GPS, devuelve la foto limpia
+  }
+
+  // --- FUNCIÓN TOMAR FOTO (ACTUALIZADA CON SELLO) ---
   Future<void> _tomarFotoFisico() async {
     if (_subiendoFoto) return;
 
@@ -31,14 +70,16 @@ class _PreoperacionalOpcionesPageState extends State<PreoperacionalOpcionesPage>
     
     if (foto != null) {
       setState(() => _subiendoFoto = true);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⏳ Subiendo evidencia física..."), backgroundColor: Colors.orange));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⏳ Aplicando seguridad y subiendo evidencia..."), backgroundColor: Colors.orange));
 
       try {
-        File archivoFisico = File(foto.path);
+        // AQUÍ ESTÁ LA MAGIA: Pasamos la foto por el sello antes de subirla
+        File archivoFisico = await _aplicarSelloDeAgua(foto);
+        
         int driverId = int.tryParse(widget.datosServidor['driver_id']?.toString() ?? "0") ?? 0;
         int tripIdReal = int.tryParse(widget.datosServidor['trip_id']?.toString() ?? "0") ?? 0;
         
-        // 1. SUBIR FOTO A FIREBASE
+        // 1. SUBIR FOTO A FIREBASE (Sube el archivo ya sellado)
         String nombreArchivo = "preoperacional_${driverId}_${DateTime.now().millisecondsSinceEpoch}.jpg";
         Reference ref = FirebaseStorage.instance.ref().child('preoperacionales_fisicos/$nombreArchivo');
         UploadTask uploadTask = ref.putFile(archivoFisico, SettableMetadata(contentType: 'image/jpeg'));
@@ -57,7 +98,7 @@ class _PreoperacionalOpcionesPageState extends State<PreoperacionalOpcionesPage>
         widget.datosServidor['preoperacional_json'] = jsonEncode(jsonPreoperacional);
         widget.datosServidor['fase_viaje'] = 'PREOP_LISTO'; 
 
-        // 4. ACTUALIZAR LA TORRE DE CONTROL (POSTGRESQL) - AHORA CON EL BLINDAJE JSON
+        // 4. ACTUALIZAR LA TORRE DE CONTROL (POSTGRESQL)
         final conn = await Connection.open(
           Endpoint(host: 'gctsatelital.com', database: 'app_core', username: 'flutter', password: '5cxkdu6lo', port: 5432),
           settings: const ConnectionSettings(sslMode: SslMode.disable, connectTimeout: Duration(seconds: 15)),
@@ -71,7 +112,6 @@ class _PreoperacionalOpcionesPageState extends State<PreoperacionalOpcionesPage>
         if (!mounted) return;
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         
-        // Teletransportación segura
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => ValidacionViajePage(datosServidor: widget.datosServidor)),

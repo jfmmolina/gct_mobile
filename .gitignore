@@ -7,6 +7,8 @@
 build/
 ios/Flutter/Generated.xcconfig
 
-# Archivos de seguridad de Google Play
-key.properties
+# Archivos de seguridad de Google Play y Firebase
+**/key.properties
 **/*.jks
+**/*.keystore
+**/google-services.json

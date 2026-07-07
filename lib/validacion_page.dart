@@ -31,8 +31,8 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
   final List<File> _listaFotos = []; 
   
   Position? position;
-  String _latitudActual = "0.0";
-  String _longitudActual = "0.0";
+  String _latitudActual = "0.0000";
+  String _longitudActual = "0.0000";
 
   bool _procesandoFoto = false; 
   bool _subiendoViaje = false;  
@@ -54,7 +54,7 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
     }
   }
 
-  // --- TOMAR FOTO CON MARCA DE AGUA ---
+  // --- TOMAR FOTO CON MARCA DE AGUA CORPORATIVA UNIFICADA ---
   Future<void> _tomarFotoReal() async {
     if (_procesandoFoto) return;
     if (_fotosTomadas >= _limiteFotos) {
@@ -72,8 +72,8 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
         position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high, timeLimit: const Duration(seconds: 5));
         if (position != null) {
           setState(() {
-            _latitudActual = position!.latitude.toStringAsFixed(6);
-            _longitudActual = position!.longitude.toStringAsFixed(6);
+            _latitudActual = position!.latitude.toStringAsFixed(4);
+            _longitudActual = position!.longitude.toStringAsFixed(4);
           });
         }
       }
@@ -88,8 +88,21 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
         
         img.Image? imagenDecodificada = img.decodeImage(bytes);
         if (imagenDecodificada != null) {
+          // Extraemos la información del camión para el sello corporativo
+          String placa = widget.datosServidor['placa_cabezote'] ?? widget.datosServidor['vehiculo'] ?? "S/P";
           String fechaHora = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
-          img.drawString(imagenDecodificada, "$fechaHora | GPS: $_latitudActual, $_longitudActual", font: img.arial24, x: 20, y: imagenDecodificada.height - 40, color: img.ColorRgb8(255, 255, 0));
+          
+          // Formato unificado: GCT | PLACA | FECHA Y HORA | COORDENADAS
+          String textoSello = "GCT | $placa | $fechaHora | Lat: $_latitudActual, Lng: $_longitudActual";
+
+          img.drawString(
+            imagenDecodificada, 
+            textoSello, 
+            font: img.arial24, 
+            x: 15, 
+            y: imagenDecodificada.height - 35, 
+            color: img.ColorRgb8(255, 255, 255) // Blanco Corporativo
+          );
           await archivoRescatado.writeAsBytes(img.encodeJpg(imagenDecodificada, quality: 85));
         } else {
           await archivoRescatado.writeAsBytes(bytes);
@@ -113,7 +126,7 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
     }
   }
 
-  // --- NUEVO: ACEPTAR VIAJE (FASE 1) ---
+  // --- ACEPTAR VIAJE (FASE 1) ---
   Future<void> _aceptarViaje() async {
     setState(() => _procesandoAceptacion = true);
     try {
@@ -212,7 +225,7 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
       setState(() {
         _subiendoViaje = false;
         _viajeExitoso = true; 
-        widget.datosServidor['fase_viaje'] = 'EN_RUTA'; // Actualiza visualmente
+        widget.datosServidor['fase_viaje'] = 'EN_RUTA'; 
       });
 
     } catch (e) {
@@ -248,7 +261,6 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
 
   @override
   Widget build(BuildContext context) {
-    // 🧠 LECTURA DE FASE ACTUAL
     String faseActual = widget.datosServidor['fase_viaje']?.toString().toUpperCase() ?? 'ASIGNADO';
     if (_viajeExitoso) faseActual = 'EN_RUTA';
 
@@ -267,7 +279,6 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            // --- BLOQUE SIEMPRE VISIBLE ---
             Container(
               width: double.infinity, padding: const EdgeInsets.all(15), margin: const EdgeInsets.only(bottom: 20),
               decoration: BoxDecoration(color: Colors.blue[900], borderRadius: BorderRadius.circular(10)),
@@ -290,7 +301,6 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
               trailing: IconButton(icon: const Icon(Icons.edit_note, color: Colors.orange), onPressed: () => _editarDato("Celular", "celular")),
             ),
 
-            // --- MOSTRAR LA RUTA SIEMPRE AQUÍ ---
             Container(
               margin: const EdgeInsets.symmetric(vertical: 10),
               padding: const EdgeInsets.all(12),
@@ -356,8 +366,7 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
               const Text("Por favor registre su preoperacional antes de ingresar a la zona de carga.", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 13)),
             ],
 
-            
-            // 🟢 FASE 3: PREOP_LISTO (Formulario Final)
+            // 🟢 FASE 3: PREOP_LISTO
             if (faseActual == 'PREOP_LISTO') ...[
               Card(
                 color: Colors.blueGrey[50],
@@ -388,7 +397,6 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
                 ),
               ),
 
-              // --- NUEVA TARJETA: DOCUMENTACIÓN DEL VIAJE ---
               const SizedBox(height: 10),
               Card(
                 color: Colors.blue[50],
@@ -399,7 +407,6 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
                     children: [
                       const Text("DOCUMENTACIÓN DEL VIAJE", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey)),
                       
-                      // 1. Campo del Cliente (Dinámico)
                       ListTile(
                         contentPadding: EdgeInsets.zero,
                         leading: const Icon(Icons.folder_shared, color: Colors.blue),
@@ -417,7 +424,6 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
                       
                       const Divider(height: 0),
 
-                      // 2. Campo del Manifiesto
                       ListTile(
                         contentPadding: EdgeInsets.zero,
                         leading: const Icon(Icons.assignment, color: Colors.orange),
@@ -534,4 +540,4 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
       ),
     );
   }
-}
+} 
