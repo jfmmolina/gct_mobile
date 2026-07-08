@@ -72,51 +72,49 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
         position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high, timeLimit: const Duration(seconds: 5));
         if (position != null) {
           setState(() {
-            _latitudActual = position!.latitude.toStringAsFixed(4);
-            _longitudActual = position!.longitude.toStringAsFixed(4);
+            _latitudActual = position!.latitude.toStringAsFixed(6); // Más precisión decimal para GPS
+            _longitudActual = position!.longitude.toStringAsFixed(6);
           });
         }
       }
 
-      final XFile? foto = await picker.pickImage(source: ImageSource.camera, imageQuality: 70, maxWidth: 800);
+      final XFile? foto = await picker.pickImage(source: ImageSource.camera, imageQuality: 70, maxWidth: 1200); // Subimos ancho para nitidez del sello
 
       if (foto != null) {
         final bytes = await foto.readAsBytes();
-        final tempDir = await getTemporaryDirectory();
         final directory = await getApplicationDocumentsDirectory();
-        final File archivoRescatado = File('${tempDir.path}/evidencia_temp.jpg');
         
         img.Image? imagenDecodificada = img.decodeImage(bytes);
         if (imagenDecodificada != null) {
-          // Extraemos la información del camión para el sello corporativo
-          String placa = widget.datosServidor['placa_cabezote'] ?? widget.datosServidor['vehiculo'] ?? "S/P";
-          String fechaHora = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
+          // Extraemos la información del cabezote garantizando consistencia
+          String placa = (widget.datosServidor['placa_cabezote'] ?? widget.datosServidor['vehiculo'] ?? "S/P").toString().toUpperCase().trim();
+          String fechaHora = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
           
-          // Formato unificado: GCT | PLACA | FECHA Y HORA | COORDENADAS
-          String textoSello = "GCT | $placa | $fechaHora | Lat: $_latitudActual, Lng: $_longitudActual";
+          // Formato unificado GCT con Placa visible
+          String textoSello = "GCT | PLACA: $placa | FECHA: $fechaHora | GPS: $_latitudActual, $_longitudActual";
 
+          // Sello de agua mejorado con tipografía clara en la base de la imagen
           img.drawString(
             imagenDecodificada, 
             textoSello, 
             font: img.arial24, 
-            x: 15, 
-            y: imagenDecodificada.height - 35, 
-            color: img.ColorRgb8(255, 255, 255) // Blanco Corporativo
+            x: 20, 
+            y: imagenDecodificada.height - 40, 
+            color: img.ColorRgb8(255, 235, 59) // Usamos Amarillo Tránsito/Seguridad para contraste perfecto en exteriores
           );
-          await archivoRescatado.writeAsBytes(img.encodeJpg(imagenDecodificada, quality: 85));
-        } else {
-          await archivoRescatado.writeAsBytes(bytes);
-        }
+          
+          String nuevoNombre = "GCT_INICIO_${placa}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}_$_fotosTomadas.jpg";
+          String nuevaRuta = "${directory.path}/$nuevoNombre";
+          
+          File archivoFinal = File(nuevaRuta);
+          await archivoFinal.writeAsBytes(img.encodeJpg(imagenDecodificada, quality: 85));
 
-        String nuevoNombre = "GCT_INICIO_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.jpg";
-        String nuevaRuta = "${directory.path}/$nuevoNombre";
-        await archivoRescatado.copy(nuevaRuta);
-
-        if (mounted) {
-          setState(() {
-            _listaFotos.add(File(nuevaRuta)); 
-            _fotosTomadas++;
-          });
+          if (mounted) {
+            setState(() {
+              _listaFotos.add(archivoFinal); 
+              _fotosTomadas++;
+            });
+          }
         }
       }
     } catch (e) {
@@ -155,22 +153,22 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
     }
   }
 
-  // --- SUBIR DATOS Y ACTIVAR VIAJE (FASE 3) ---
+  // --- SUBIR DATOS Y ACTIVAR VIAJE SIN REESCRIBIR FOTOS ---
   Future<void> _subirEvidencias() async {
     setState(() => _subiendoViaje = true);
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⏳ Guardando evidencia e iniciando ruta..."), backgroundColor: Colors.orange));
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⏳ Guardando evidencia en base de datos..."), backgroundColor: Colors.orange));
 
     try {
       int tripIdReal = int.tryParse(widget.datosServidor['trip_id']?.toString() ?? "0") ?? 0;
       String celular = widget.datosServidor['celular']?.toString() ?? "";
       String trailer = widget.datosServidor['placa_trailer']?.toString() ?? "";
       String cabezote = widget.datosServidor['placa_cabezote']?.toString() ?? "";
-      
       String preopJsonStr = widget.datosServidor['preoperacional_json']?.toString() ?? '{}';
-      String urlPublicaFinal = "";
+      
+      List<String> linksGenerados = []; 
 
+      // 1. Subida ordenada a Firebase Storage
       if (_listaFotos.isNotEmpty) {
-        List<String> linksGenerados = []; 
         for (int i = 0; i < _listaFotos.length; i++) {
           File archivo = _listaFotos[i];
           String nombreArchivo = "inicio_viaje_${tripIdReal}_${DateTime.now().millisecondsSinceEpoch}_$i.jpg";
@@ -182,15 +180,16 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
           String urlTemp = await snapshot.ref.getDownloadURL();
           linksGenerados.add(urlTemp);
         }
-        urlPublicaFinal = linksGenerados.join(","); 
       }
 
+      // 2. Conexión e Inserción Segura en PostgreSQL (Transaccional)
       final conn = await Connection.open(
         Endpoint(host: 'gctsatelital.com', database: 'app_core', username: 'flutter', password: '5cxkdu6lo', port: 5432),
         settings: const ConnectionSettings(sslMode: SslMode.disable, connectTimeout: Duration(seconds: 20)),
       );
 
       await conn.runTx((session) async {
+        // Actualizamos estado general del viaje activo
         await session.execute(
           r'''
           UPDATE flutter_schema.active_trips
@@ -206,21 +205,37 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
           parameters: [tripIdReal, int.tryParse(_odometroController.text) ?? 0, _guiaController.text, "$_latitudActual,$_longitudActual"],
         );
 
-        await session.execute(
-           r'''
-           INSERT INTO flutter_schema.viajes 
-           (guia, odometro, celular, trailer, placa_cabezote, foto_evidencia, latitud, longitud, trip_id, fecha_registro, preoperacional_data)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, $10)
-           ''',
-           parameters: [_guiaController.text, _odometroController.text, celular, trailer, cabezote, urlPublicaFinal, _latitudActual, _longitudActual, tripIdReal, preopJsonStr]
-        );
+        // SOLUCIÓN AL REESCRIBIR: Si hay fotos, insertamos un registro único por cada foto tomada.
+        // Si no hay fotos, inserta al menos el registro de texto del viaje.
+        if (linksGenerados.isNotEmpty) {
+          for (String urlFoto in linksGenerados) {
+            await session.execute(
+               r'''
+               INSERT INTO flutter_schema.viajes 
+               (guia, odometro, celular, trailer, placa_cabezote, foto_evidencia, latitud, longitud, trip_id, fecha_registro, preoperacional_data)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, $10)
+               ''',
+               parameters: [_guiaController.text, _odometroController.text, celular, trailer, cabezote, urlFoto, _latitudActual, _longitudActual, tripIdReal, preopJsonStr]
+            );
+          }
+        } else {
+          // Registro de contingencia si inicia viaje sin fotos
+          await session.execute(
+             r'''
+             INSERT INTO flutter_schema.viajes 
+             (guia, odometro, celular, trailer, placa_cabezote, foto_evidencia, latitud, longitud, trip_id, fecha_registro, preoperacional_data)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, $10)
+             ''',
+             parameters: [_guiaController.text, _odometroController.text, celular, trailer, cabezote, "", _latitudActual, _longitudActual, tripIdReal, preopJsonStr]
+          );
+        }
       });
 
       await conn.close();
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ ¡VIAJE INICIADO Y GUARDADO!"), backgroundColor: Colors.green));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ ¡VIAJE INICIADO Y EVIdENCIAS GUARDADAS!"), backgroundColor: Colors.green));
 
       setState(() {
         _subiendoViaje = false;
@@ -232,7 +247,7 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
       debugPrint("Error al subir: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("❌ Error: $e"), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("❌ Error en guardado: $e"), backgroundColor: Colors.red));
         setState(() => _subiendoViaje = false);
       }
     }
@@ -540,4 +555,4 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
       ),
     );
   }
-} 
+}

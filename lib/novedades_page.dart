@@ -36,23 +36,37 @@ class _NovedadesPageState extends State<NovedadesPage> {
 
   Future<void> _tomarFoto() async {
     try {
-      // 1. OBTENER GPS REAL ANTES DE LA FOTO
+      // 1. OBTENER GPS REAL ANTES DE LA FOTO (Optimizado para no usar fijas)
       setState(() => _enviando = true);
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Buscando señal GPS..."), duration: Duration(seconds: 1)));
       
-      Position? position;
       LocationPermission permiso = await Geolocator.checkPermission();
       if (permiso == LocationPermission.denied) permiso = await Geolocator.requestPermission(); 
+      
       if (permiso == LocationPermission.whileInUse || permiso == LocationPermission.always) {
-        // Pedimos la ubicación con alta precisión, esperando máximo 5 segundos
-        position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high, timeLimit: const Duration(seconds: 5));
-        if (position != null) {
+        try {
+          // Intentamos recuperar la última ubicación rápida conocida del celular
+          Position? ultimaConocida = await Geolocator.getLastKnownPosition();
+          if (ultimaConocida != null) {
+            _latitudReal = ultimaConocida.latitude;
+            _longitudReal = ultimaConocida.longitude;
+          }
+
+          // Solicitamos la posición en caliente dándole un margen seguro de 6 segundos
+          Position position = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.medium, 
+            timeLimit: const Duration(seconds: 6)
+          );
+          
           _latitudReal = position.latitude;
           _longitudReal = position.longitude;
-        } else {
-          // Si el GPS falla, usamos las coordenadas de respaldo que traía el mapa
-          _latitudReal = widget.lat;
-          _longitudReal = widget.lng;
+        } catch (e) {
+          debugPrint("⚠️ Tiempo límite de GPS alcanzado. Usando respaldo del mapa: $e");
+          // Si el satélite falla en frío, se asegura de heredar el widget por contingencia
+          if (_latitudReal == 0.0) {
+            _latitudReal = widget.lat;
+            _longitudReal = widget.lng;
+          }
         }
       } else {
          _latitudReal = widget.lat;
@@ -65,7 +79,7 @@ class _NovedadesPageState extends State<NovedadesPage> {
       final XFile? photo = await _picker.pickImage(
         source: ImageSource.camera, 
         imageQuality: 70,
-        maxWidth: 1000    
+        maxWidth: 1200 // Subido un poco para que el texto largo del sello no se pise   
       );
 
       if (photo != null) {
@@ -76,21 +90,21 @@ class _NovedadesPageState extends State<NovedadesPage> {
         img.Image? imagenDecodificada = img.decodeImage(bytes);
         
         if (imagenDecodificada != null) {
-          String placa = widget.datosViaje['placa_cabezote']?.toString() ?? "SIN_PLACA";
+          String placa = (widget.datosViaje['placa_cabezote'] ?? widget.datosViaje['vehiculo'] ?? "S/P").toString().toUpperCase().trim();
           String tripId = widget.datosViaje['trip_id']?.toString() ?? "0";
-          String fechaHora = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
+          String fechaHora = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
           
-          // 👇 USAMOS LAS COORDENADAS REALES RECIÉN OBTENIDAS
-          String coordenadas = "GPS: ${_latitudReal.toStringAsFixed(5)}, ${_longitudReal.toStringAsFixed(5)}";
-          
-          String marcaAgua = "GCT NOVEDAD | $placa | $tripId | $fechaHora | $coordenadas";
+          // 👇 Aquí se inyectan las coordenadas reales calculadas arriba de forma limpia
+          String coordenadas = "GPS: ${_latitudReal.toStringAsFixed(6)}, ${_longitudReal.toStringAsFixed(6)}";
+          String marcaAgua = "GCT NOVEDAD | PLACA: $placa | TRIP: $tripId | FECHA: $fechaHora | $coordenadas |";
 
           img.drawString(
             imagenDecodificada, marcaAgua, 
-            font: img.arial24, x: 20, y: imagenDecodificada.height - 50, color: img.ColorRgb8(255, 255, 0) 
+            font: img.arial24, x: 20, y: imagenDecodificada.height - 45, 
+            color: img.ColorRgb8(255, 235, 59) // Tu color amarillo de alta visibilidad
           );
 
-          final File archivoProcesado = File('${tempDir.path}/novedad_temp.jpg');
+          final File archivoProcesado = File('${tempDir.path}/novedad_${DateTime.now().millisecondsSinceEpoch}.jpg');
           await archivoProcesado.writeAsBytes(img.encodeJpg(imagenDecodificada, quality: 85));
 
           setState(() {
