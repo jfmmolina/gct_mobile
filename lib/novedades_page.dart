@@ -31,60 +31,72 @@ class _NovedadesPageState extends State<NovedadesPage> {
   bool _enviando = false;
 
   // NUEVAS VARIABLES: Guardarán el GPS real de la Novedad
-  double _latitudReal = 0.0;
-  double _longitudReal = 0.0;
+  // 1. NUEVAS VARIABLES DE CONTROL TEXTUAL (Reemplazar desde aquí)
+  String? _latitudFinal;
+  String? _longitudFinal;
+  DateTime? _ultimaLecturaGps;
 
-  Future<void> _tomarFoto() async {
+  @override
+  void initState() {
+    super.initState();
+    // Disparamos la búsqueda de GPS de inmediato al abrir la pantalla para ganar tiempo
+    _obtenerGpsReal(forzar: false);
+  }
+
+  // FUNCIÓN UNIFICADA PARA CAPTURA DE GPS REAL
+  Future<void> _obtenerGpsReal({required bool forzar}) async {
+    // Si no es forzado y ya tenemos una lectura de hace menos de 45 segundos, la reutilizamos
+    if (!forzar && _ultimaLecturaGps != null && 
+        DateTime.now().difference(_ultimaLecturaGps!).inSeconds < 45) {
+      return;
+    }
+
     try {
-      // 1. OBTENER GPS REAL ANTES DE LA FOTO (Optimizado para no usar fijas)
-      setState(() => _enviando = true);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Buscando señal GPS..."), duration: Duration(seconds: 1)));
-      
       LocationPermission permiso = await Geolocator.checkPermission();
       if (permiso == LocationPermission.denied) permiso = await Geolocator.requestPermission(); 
       
       if (permiso == LocationPermission.whileInUse || permiso == LocationPermission.always) {
-        try {
-          // Intentamos recuperar la última ubicación rápida conocida del celular
-          Position? ultimaConocida = await Geolocator.getLastKnownPosition();
-          if (ultimaConocida != null) {
-            _latitudReal = ultimaConocida.latitude;
-            _longitudReal = ultimaConocida.longitude;
-          }
-
-          // Solicitamos la posición en caliente dándole un margen seguro de 6 segundos
-          Position position = await Geolocator.getCurrentPosition(
-            desiredAccuracy: LocationAccuracy.medium, 
-            timeLimit: const Duration(seconds: 6)
-          );
-          
-          _latitudReal = position.latitude;
-          _longitudReal = position.longitude;
-        } catch (e) {
-          debugPrint("⚠️ Tiempo límite de GPS alcanzado. Usando respaldo del mapa: $e");
-          // Si el satélite falla en frío, se asegura de heredar el widget por contingencia
-          if (_latitudReal == 0.0) {
-            _latitudReal = widget.lat;
-            _longitudReal = widget.lng;
-          }
+        // Intento rápido con la última posición conocida
+        Position? ultimaConocida = await Geolocator.getLastKnownPosition();
+        if (ultimaConocida != null) {
+          _latitudFinal = ultimaConocida.latitude.toStringAsFixed(6);
+          _longitudFinal = ultimaConocida.longitude.toStringAsFixed(6);
         }
-      } else {
-         _latitudReal = widget.lat;
-         _longitudReal = widget.lng;
+
+        // Consulta al sensor en tiempo real (máximo 5 segundos de espera)
+        Position position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.medium, 
+          timeLimit: const Duration(seconds: 5)
+        );
+        
+        _latitudFinal = position.latitude.toStringAsFixed(6);
+        _longitudFinal = position.longitude.toStringAsFixed(6);
+        _ultimaLecturaGps = DateTime.now();
       }
+    } catch (e) {
+      debugPrint("⚠️ No se pudo obtener señal GPS fresca: $e");
+      // Si falla por completo el sensor y no hay lectura previa, dejamos nulo el valor
+      if (_ultimaLecturaGps == null) {
+        _latitudFinal = null;
+        _longitudFinal = null;
+      }
+    }
+  }
 
-      setState(() => _enviando = false);
+  Future<void> _tomarFoto() async {
+    try {
+      setState(() => _enviando = true);
+      
+      // Forzamos actualización de GPS en el momento de la foto
+      await _obtenerGpsReal(forzar: true);
 
-      // 2. ABRIR CÁMARA
       final XFile? photo = await _picker.pickImage(
         source: ImageSource.camera, 
         imageQuality: 70,
-        maxWidth: 1200 // Subido un poco para que el texto largo del sello no se pise   
+        maxWidth: 1200   
       );
 
       if (photo != null) {
-        setState(() => _enviando = true); 
-
         final bytes = await photo.readAsBytes();
         final tempDir = await getTemporaryDirectory();
         img.Image? imagenDecodificada = img.decodeImage(bytes);
@@ -94,14 +106,17 @@ class _NovedadesPageState extends State<NovedadesPage> {
           String tripId = widget.datosViaje['trip_id']?.toString() ?? "0";
           String fechaHora = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
           
-          // 👇 Aquí se inyectan las coordenadas reales calculadas arriba de forma limpia
-          String coordenadas = "GPS: ${_latitudReal.toStringAsFixed(6)}, ${_longitudReal.toStringAsFixed(6)}";
-          String marcaAgua = "GCT NOVEDAD | PLACA: $placa | TRIP: $tripId | FECHA: $fechaHora | $coordenadas |";
+          // Si el valor es null, la foto dirá el aviso físico, pero la BD mantendrá el concepto puro
+          String coordenadasStr = (_latitudFinal == null) 
+              ? "COORDENADAS NO DISPONIBLES" 
+              : "GPS: $_latitudFinal, $_longitudFinal";
+
+          String marcaAgua = "GCT NOVEDAD | PLACA: $placa | TRIP: $tripId | FECHA: $fechaHora | $coordenadasStr |";
 
           img.drawString(
             imagenDecodificada, marcaAgua, 
             font: img.arial24, x: 20, y: imagenDecodificada.height - 45, 
-            color: img.ColorRgb8(255, 235, 59) // Tu color amarillo de alta visibilidad
+            color: img.ColorRgb8(255, 235, 59)
           );
 
           final File archivoProcesado = File('${tempDir.path}/novedad_${DateTime.now().millisecondsSinceEpoch}.jpg');
@@ -109,14 +124,48 @@ class _NovedadesPageState extends State<NovedadesPage> {
 
           setState(() {
             _fotosNovedad.add(archivoProcesado);
-            _enviando = false;
           });
         }
       }
+      setState(() => _enviando = false);
     } catch (e) {
       debugPrint("❌ Error procesando foto de novedad: $e");
       if (mounted) setState(() => _enviando = false);
     }
+  }
+
+  // DIÁLOGO DE CONFIRMACIÓN ANTES DE ENVIAR (Previene clics accidentales)
+  void _confirmarRegistroNovedad(String motivo) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
+              SizedBox(width: 10),
+              Text("Confirmar Reporte"),
+            ],
+          ),
+          content: Text("¿Está seguro que desea reportar la novedad de tipo \"$motivo\"?"),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("CANCELAR", style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.orange[800]),
+              onPressed: () {
+                Navigator.pop(context);
+                _registrarNovedad(motivo);
+              },
+              child: const Text("CONFIRMAR", style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _registrarNovedad(String motivo) async {
@@ -128,29 +177,23 @@ class _NovedadesPageState extends State<NovedadesPage> {
     setState(() => _enviando = true);
     
     try {
+      // Validamos el GPS antes de insertar (Si se mueve en carretera, calcula la nueva posición)
+      await _obtenerGpsReal(forzar: false);
+
       int tripId = int.tryParse(widget.datosViaje['trip_id']?.toString() ?? "0") ?? 0;
       List<String> urls = [];
 
-      // 1. SUBIDA DIRECTA A FIREBASE (Igual a Validación)
       for (var i = 0; i < _fotosNovedad.length; i++) {
         String nombre = "novedad_${tripId}_${DateTime.now().millisecondsSinceEpoch}_$i.jpg";
         final ref = FirebaseStorage.instance.ref().child('evidencias_viajes/$nombre');
-
-        // Reintento automático: Si falla por red, lo intenta una segunda vez
         try {
-          await ref.putFile(
-            _fotosNovedad[i], 
-            SettableMetadata(contentType: 'image/jpeg')
-          ).timeout(const Duration(seconds: 60)); // Aumentamos a 60 segundos por precaución
+          await ref.putFile(_fotosNovedad[i], SettableMetadata(contentType: 'image/jpeg')).timeout(const Duration(seconds: 45));
         } catch (e) {
-          // Segundo intento si el primero falla por señal débil
-          await ref.putFile(_fotosNovedad[i]).timeout(const Duration(seconds: 60));
+          await ref.putFile(_fotosNovedad[i]).timeout(const Duration(seconds: 45));
         } 
-  
         urls.add(await ref.getDownloadURL());
       }
 
-      // 2. CONEXIÓN BASE DE DATOS
       final conn = await Connection.open(
         Endpoint(host: 'gctsatelital.com', database: 'app_core', username: 'flutter', password: '5cxkdu6lo', port: 5432),
         settings: const ConnectionSettings(sslMode: SslMode.disable, connectTimeout: Duration(seconds: 15)),
@@ -165,8 +208,8 @@ class _NovedadesPageState extends State<NovedadesPage> {
           int.tryParse(widget.datosViaje['cedula']?.toString() ?? "0") ?? 0,
           motivo,
           _comentarioController.text,
-          _latitudReal != 0.0 ? _latitudReal.toString() : widget.lat.toString(), // GPS Real
-          _longitudReal != 0.0 ? _longitudReal.toString() : widget.lng.toString(), //GPS Real
+          _latitudFinal, // Pasará la coordenada en texto o NULL de forma nativa
+          _longitudFinal, // Pasará la coordenada en texto o NULL de forma nativa
           urls.join(',')
         ],
       );
@@ -186,7 +229,6 @@ class _NovedadesPageState extends State<NovedadesPage> {
 
   @override
   Widget build(BuildContext context) {
-    // Obtenemos el trip_id para mostrarlo
     String tripIdDisplay = widget.datosViaje['trip_id']?.toString() ?? "N/A";
 
     return Scaffold(
@@ -199,7 +241,6 @@ class _NovedadesPageState extends State<NovedadesPage> {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            // 1. Encabezado Visual Decorativo
             Container(
               padding: const EdgeInsets.all(15),
               decoration: BoxDecoration(
@@ -223,7 +264,6 @@ class _NovedadesPageState extends State<NovedadesPage> {
             ),
             const SizedBox(height: 25),
 
-            // 2. Campo de Comentario
             TextField(
               controller: _comentarioController,
               textCapitalization: TextCapitalization.sentences,
@@ -239,7 +279,6 @@ class _NovedadesPageState extends State<NovedadesPage> {
             ),
             const SizedBox(height: 15),
 
-            // 3. Botón de Foto Decorado
             SizedBox(
               width: double.infinity,
               height: 50,
@@ -259,7 +298,6 @@ class _NovedadesPageState extends State<NovedadesPage> {
               ),
             ),
             
-            // Vista previa de la foto (si hay)
             if (_fotosNovedad.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 10),
@@ -271,7 +309,6 @@ class _NovedadesPageState extends State<NovedadesPage> {
 
             const Divider(height: 50, thickness: 1),
             
-            // 4. Sección de Botones de Novedad Decorados
             Text("SELECCIONE EL MOTIVO DE LA NOVEDAD", style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.bold, fontSize: 13)),
             const SizedBox(height: 20),
 
@@ -280,7 +317,7 @@ class _NovedadesPageState extends State<NovedadesPage> {
                 children: [
                   CircularProgressIndicator(color: Colors.orange),
                   SizedBox(height: 10),
-                  Text("Subiendo evidencia y registrando...", style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold))
+                  Text("Procesando y registrando...", style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold))
                 ],
               ),
 
@@ -288,10 +325,10 @@ class _NovedadesPageState extends State<NovedadesPage> {
               GridView.count(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                crossAxisCount: 2, // 2 columnas
+                crossAxisCount: 2, 
                 crossAxisSpacing: 15,
                 mainAxisSpacing: 15,
-                childAspectRatio: 1.6, // Proporción de los botones
+                childAspectRatio: 1.6, 
                 children: [
                   _botonDecorado("Tráfico", Icons.traffic, Colors.orange),
                   _botonDecorado("Falla Mecánica", Icons.car_repair, Colors.purple),
@@ -308,10 +345,9 @@ class _NovedadesPageState extends State<NovedadesPage> {
     );
   }
 
-  // Widget auxiliar para crear botones decorados con iconos
   Widget _botonDecorado(String titulo, IconData icono, Color color) {
     return InkWell(
-      onTap: () => _registrarNovedad(titulo),
+      onTap: () => _confirmarRegistroNovedad(titulo), // 👈 Cambiado quirúrgicamente para llamar al aviso "¿Enviar?"
       child: Container(
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.1),
