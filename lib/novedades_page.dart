@@ -1,12 +1,12 @@
-import 'package:path_provider/path_provider.dart'; // Para guardar el archivo procesado
-import 'package:intl/intl.dart';               // Para el formato de fecha
-import 'package:image/image.dart' as img;      // Para "dibujar" en la foto
-import 'package:flutter/material.dart';
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:postgres/postgres.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:intl/intl.dart';
+
+import 'watermark_service.dart'; // Servicio unificado con logo GCT y marca de agua
 
 class NovedadesPage extends StatefulWidget {
   final Map<String, dynamic> datosViaje;
@@ -30,8 +30,6 @@ class _NovedadesPageState extends State<NovedadesPage> {
   final ImagePicker _picker = ImagePicker();
   bool _enviando = false;
 
-  // NUEVAS VARIABLES: Guardarán el GPS real de la Novedad
-  // 1. NUEVAS VARIABLES DE CONTROL TEXTUAL (Reemplazar desde aquí)
   String? _latitudFinal;
   String? _longitudFinal;
   DateTime? _ultimaLecturaGps;
@@ -75,7 +73,6 @@ class _NovedadesPageState extends State<NovedadesPage> {
       }
     } catch (e) {
       debugPrint("⚠️ No se pudo obtener señal GPS fresca: $e");
-      // Si falla por completo el sensor y no hay lectura previa, dejamos nulo el valor
       if (_ultimaLecturaGps == null) {
         _latitudFinal = null;
         _longitudFinal = null;
@@ -83,6 +80,7 @@ class _NovedadesPageState extends State<NovedadesPage> {
     }
   }
 
+  // TOMAR FOTO CON WATERMARK SERVICE (LOGO GCT + DATOS)
   Future<void> _tomarFoto() async {
     try {
       setState(() => _enviando = true);
@@ -92,49 +90,48 @@ class _NovedadesPageState extends State<NovedadesPage> {
 
       final XFile? photo = await _picker.pickImage(
         source: ImageSource.camera, 
-        imageQuality: 70,
-        maxWidth: 1200   
+        imageQuality: 85,
+        maxWidth: 1280   
       );
 
       if (photo != null) {
-        final bytes = await photo.readAsBytes();
-        final tempDir = await getTemporaryDirectory();
-        img.Image? imagenDecodificada = img.decodeImage(bytes);
+        String placa = (widget.datosViaje['placa_cabezote'] ?? widget.datosViaje['vehiculo'] ?? "S/P")
+            .toString()
+            .toUpperCase()
+            .trim();
+        String fechaHora = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
         
-        if (imagenDecodificada != null) {
-          String placa = (widget.datosViaje['placa_cabezote'] ?? widget.datosViaje['vehiculo'] ?? "S/P").toString().toUpperCase().trim();
-          String tripId = widget.datosViaje['trip_id']?.toString() ?? "0";
-          String fechaHora = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
-          
-          // Si el valor es null, la foto dirá el aviso físico, pero la BD mantendrá el concepto puro
-          String coordenadasStr = (_latitudFinal == null) 
-              ? "COORDENADAS NO DISPONIBLES" 
-              : "GPS: $_latitudFinal, $_longitudFinal";
+        String coordenadasStr = (_latitudFinal == null) 
+            ? "GPS NO DISPONIBLE" 
+            : "$_latitudFinal, $_longitudFinal";
 
-          String marcaAgua = "GCT NOVEDAD | PLACA: $placa | TRIP: $tripId | FECHA: $fechaHora | $coordenadasStr |";
+        // Aplicamos la marca de agua corporativa
+        File fotoProcesada = await WatermarkService.aplicarMarcaDeAgua(
+          imagenOriginal: File(photo.path),
+          textoPlaca: placa,
+          textoGPS: coordenadasStr,
+          fechaHora: fechaHora,
+        );
 
-          img.drawString(
-            imagenDecodificada, marcaAgua, 
-            font: img.arial24, x: 20, y: imagenDecodificada.height - 45, 
-            color: img.ColorRgb8(255, 235, 59)
-          );
-
-          final File archivoProcesado = File('${tempDir.path}/novedad_${DateTime.now().millisecondsSinceEpoch}.jpg');
-          await archivoProcesado.writeAsBytes(img.encodeJpg(imagenDecodificada, quality: 85));
-
+        if (mounted) {
           setState(() {
-            _fotosNovedad.add(archivoProcesado);
+            _fotosNovedad.add(fotoProcesada);
           });
         }
       }
-      setState(() => _enviando = false);
     } catch (e) {
       debugPrint("❌ Error procesando foto de novedad: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ Error al capturar foto: $e"), backgroundColor: Colors.red)
+        );
+      }
+    } finally {
       if (mounted) setState(() => _enviando = false);
     }
   }
 
-  // DIÁLOGO DE CONFIRMACIÓN ANTES DE ENVIAR (Previene clics accidentales)
+  // DIÁLOGO DE CONFIRMACIÓN ANTES DE ENVIAR
   void _confirmarRegistroNovedad(String motivo) {
     showDialog(
       context: context,
@@ -170,30 +167,34 @@ class _NovedadesPageState extends State<NovedadesPage> {
 
   Future<void> _registrarNovedad(String motivo) async {
     if ((motivo == "Falla Mecánica" || motivo == "Vía Bloqueada") && _fotosNovedad.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⚠️ Esta novedad requiere foto"), backgroundColor: Colors.orange));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("⚠️ Esta novedad requiere foto de evidencia"), backgroundColor: Colors.orange)
+      );
       return;
     }
 
     setState(() => _enviando = true);
     
     try {
-      // Validamos el GPS antes de insertar (Si se mueve en carretera, calcula la nueva posición)
       await _obtenerGpsReal(forzar: false);
 
       int tripId = int.tryParse(widget.datosViaje['trip_id']?.toString() ?? "0") ?? 0;
       List<String> urls = [];
 
+      // Subida de fotos selladas a evidencias_viajes/ en Firebase Storage
       for (var i = 0; i < _fotosNovedad.length; i++) {
         String nombre = "novedad_${tripId}_${DateTime.now().millisecondsSinceEpoch}_$i.jpg";
         final ref = FirebaseStorage.instance.ref().child('evidencias_viajes/$nombre');
-        try {
-          await ref.putFile(_fotosNovedad[i], SettableMetadata(contentType: 'image/jpeg')).timeout(const Duration(seconds: 45));
-        } catch (e) {
-          await ref.putFile(_fotosNovedad[i]).timeout(const Duration(seconds: 45));
-        } 
-        urls.add(await ref.getDownloadURL());
+        
+        final bytes = await _fotosNovedad[i].readAsBytes();
+        UploadTask uploadTask = ref.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
+        TaskSnapshot snapshot = await uploadTask.timeout(const Duration(seconds: 45));
+        
+        String url = await snapshot.ref.getDownloadURL();
+        urls.add(url);
       }
 
+      // Conexión y guardado en PostgreSQL
       final conn = await Connection.open(
         Endpoint(host: 'gctsatelital.com', database: 'app_core', username: 'flutter', password: '5cxkdu6lo', port: 5432),
         settings: const ConnectionSettings(sslMode: SslMode.disable, connectTimeout: Duration(seconds: 15)),
@@ -208,20 +209,25 @@ class _NovedadesPageState extends State<NovedadesPage> {
           int.tryParse(widget.datosViaje['cedula']?.toString() ?? "0") ?? 0,
           motivo,
           _comentarioController.text,
-          _latitudFinal, // Pasará la coordenada en texto o NULL de forma nativa
-          _longitudFinal, // Pasará la coordenada en texto o NULL de forma nativa
+          _latitudFinal,
+          _longitudFinal,
           urls.join(',')
         ],
       );
 
       await conn.close();
+
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ Novedad registrada"), backgroundColor: Colors.green));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("✅ Novedad registrada correctamente"), backgroundColor: Colors.green)
+        );
         Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("❌ Error: $e"), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ Error al registrar novedad: $e"), backgroundColor: Colors.red)
+        );
         setState(() => _enviando = false);
       }
     }
@@ -347,7 +353,7 @@ class _NovedadesPageState extends State<NovedadesPage> {
 
   Widget _botonDecorado(String titulo, IconData icono, Color color) {
     return InkWell(
-      onTap: () => _confirmarRegistroNovedad(titulo), // 👈 Cambiado quirúrgicamente para llamar al aviso "¿Enviar?"
+      onTap: () => _confirmarRegistroNovedad(titulo),
       child: Container(
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.1),
@@ -369,4 +375,4 @@ class _NovedadesPageState extends State<NovedadesPage> {
       ),
     );
   }
-}
+} 

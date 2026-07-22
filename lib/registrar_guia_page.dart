@@ -1,9 +1,13 @@
-import 'package:flutter/material.dart';
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:postgres/postgres.dart';
 import 'package:barcode_scan2/barcode_scan2.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:intl/intl.dart';
+
+import 'watermark_service.dart'; // Servicio unificado de marca de agua y logo GCT
 
 class RegistrarGuiaPage extends StatefulWidget {
   final Map<String, dynamic> datosViaje;
@@ -18,9 +22,14 @@ class _RegistrarGuiaPageState extends State<RegistrarGuiaPage> {
   final TextEditingController _guiaController = TextEditingController();
   File? _fotoGuia;
   final ImagePicker _picker = ImagePicker();
+  
   bool _guardando = false;
+  bool _procesandoFoto = false;
+  
+  String _latitudActual = "0.0000";
+  String _longitudActual = "0.0000";
 
-  // 1. ESCANEAR CÓDIGO DE BARRAS (Igual a Validación)
+  // 1. ESCANEAR CÓDIGO DE BARRAS
   Future<void> _escanearCodigo() async {
     try {
       var result = await BarcodeScanner.scan();
@@ -41,21 +50,63 @@ class _RegistrarGuiaPageState extends State<RegistrarGuiaPage> {
     }
   }
 
-  // 2. TOMAR FOTO DE LA GUÍA (Formato simple y comprimido)
+  // 2. TOMAR FOTO DE LA GUÍA CON MARCA DE AGUA (WATERMARK SERVICE)
   Future<void> _tomarFoto() async {
+    if (_procesandoFoto) return;
+    setState(() => _procesandoFoto = true);
+
     try {
+      // Obtener GPS actual
+      LocationPermission permiso = await Geolocator.checkPermission();
+      if (permiso == LocationPermission.denied) permiso = await Geolocator.requestPermission();
+      if (permiso == LocationPermission.whileInUse || permiso == LocationPermission.always) {
+        Position pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 5),
+        );
+        _latitudActual = pos.latitude.toStringAsFixed(6);
+        _longitudActual = pos.longitude.toStringAsFixed(6);
+      }
+
       final XFile? foto = await _picker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 60,
-        maxWidth: 800,
+        imageQuality: 85,
+        maxWidth: 1280,
       );
+
       if (foto != null) {
-        setState(() {
-          _fotoGuia = File(foto.path);
-        });
+        File archivoTemp = File(foto.path);
+
+        String placa = (widget.datosViaje['placa_cabezote'] ?? widget.datosViaje['vehiculo'] ?? "S/P")
+            .toString()
+            .toUpperCase()
+            .trim();
+        String fechaHora = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
+        String gpsTexto = "$_latitudActual, $_longitudActual";
+
+        // Aplicar marca de agua corporativa
+        File fotoProcesada = await WatermarkService.aplicarMarcaDeAgua(
+          imagenOriginal: archivoTemp,
+          textoPlaca: placa,
+          textoGPS: gpsTexto,
+          fechaHora: fechaHora,
+        );
+
+        if (mounted) {
+          setState(() {
+            _fotoGuia = fotoProcesada;
+          });
+        }
       }
     } catch (e) {
-      debugPrint("❌ Error al abrir cámara: $e");
+      debugPrint("❌ Error al tomar/procesar foto de guía: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ Error al tomar foto: $e"), backgroundColor: Colors.red)
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _procesandoFoto = false);
     }
   }
 
@@ -77,12 +128,13 @@ class _RegistrarGuiaPageState extends State<RegistrarGuiaPage> {
       int tripId = int.tryParse(widget.datosViaje['trip_id']?.toString() ?? "0") ?? 0;
       String urlFotoPublica = "";
 
-      // Si tomó foto, la subimos a Firebase
+      // Si tomó foto, la subimos a Firebase Storage en evidencias_viajes/
       if (_fotoGuia != null) {
         String nombre = "guia_ruta_${tripId}_${DateTime.now().millisecondsSinceEpoch}.jpg";
         final ref = FirebaseStorage.instance.ref().child('evidencias_viajes/$nombre');
         
-        UploadTask uploadTask = ref.putFile(_fotoGuia!, SettableMetadata(contentType: 'image/jpeg'));
+        final bytes = await _fotoGuia!.readAsBytes();
+        UploadTask uploadTask = ref.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
         TaskSnapshot snapshot = await uploadTask.timeout(const Duration(seconds: 45));
         urlFotoPublica = await snapshot.ref.getDownloadURL();
       }
@@ -107,7 +159,7 @@ class _RegistrarGuiaPageState extends State<RegistrarGuiaPage> {
           );
         } else {
           await session.execute(
-            "UPDATE flutter_schema.viajes SET guia = \$1 WHERE trip_id = \$3",
+            "UPDATE flutter_schema.viajes SET guia = \$1 WHERE trip_id = \$2",
             parameters: [_guiaController.text.trim(), tripId],
           );
         }
@@ -173,9 +225,11 @@ class _RegistrarGuiaPageState extends State<RegistrarGuiaPage> {
               width: double.infinity,
               height: 55,
               child: ElevatedButton.icon(
-                onPressed: _guardando ? null : _tomarFoto,
-                icon: const Icon(Icons.camera_alt, size: 26),
-                label: const Text("ABRIR CÁMARA Y TOMAR FOTO", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                onPressed: (_guardando || _procesandoFoto) ? null : _tomarFoto,
+                icon: _procesandoFoto
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Icon(Icons.camera_alt, size: 26),
+                label: Text(_procesandoFoto ? "PROCESANDO MARCA DE AGUA..." : "ABRIR CÁMARA Y TOMAR FOTO", style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey[700], foregroundColor: Colors.white),
               ),
             ),
@@ -199,7 +253,7 @@ class _RegistrarGuiaPageState extends State<RegistrarGuiaPage> {
               width: double.infinity,
               height: 65,
               child: ElevatedButton(
-                onPressed: _guardando ? null : _guardarDatos,
+                onPressed: (_guardando || _procesandoFoto) ? null : _guardarDatos,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.green[700],
                   foregroundColor: Colors.white,

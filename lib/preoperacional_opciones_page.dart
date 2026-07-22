@@ -1,17 +1,15 @@
-import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:convert';
-import 'preoperacional_formulario_page.dart';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:postgres/postgres.dart';
-import 'package:image/image.dart' as img;
 import 'package:geolocator/geolocator.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
 
-// Importa tu página de validación actual para poder "Saltar" a ella
-import 'validacion_page.dart'; 
+import 'preoperacional_formulario_page.dart';
+import 'validacion_page.dart'; // Asegúrate de apuntar a tu clase de validación (p. ej., ValidacionViajePage)
+import 'watermark_service.dart'; // Servicio unificado con logo GCT y marca de agua
 
 class PreoperacionalOpcionesPage extends StatefulWidget {
   final Map<String, dynamic> datosServidor;
@@ -23,82 +21,58 @@ class PreoperacionalOpcionesPage extends StatefulWidget {
 }
 
 class _PreoperacionalOpcionesPageState extends State<PreoperacionalOpcionesPage> {
-  
   bool _subiendoFoto = false;
 
-  // --- NUEVA FUNCIÓN: SELLO DE SEGURIDAD CORPORATIVO COMPLETO ---
-  Future<File> _aplicarSelloDeAgua(XFile fotoOriginal) async {
-    try {
-      // Forzamos extracción de placa limpia en mayúsculas
-      String placa = (widget.datosServidor['placa_cabezote'] ?? widget.datosServidor['vehiculo'] ?? "S/P").toString().toUpperCase().trim();
-      String fechaHora = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
-      String latLngStr = "Buscando...";
-
-      // 1. Manejo seguro y con tiempo límite para el GPS
-      try {
-        LocationPermission permiso = await Geolocator.checkPermission();
-        if (permiso == LocationPermission.denied) {
-          permiso = await Geolocator.requestPermission();
-        }
-
-        if (permiso == LocationPermission.whileInUse || permiso == LocationPermission.always) {
-          Position posicion = await Geolocator.getCurrentPosition(
-              desiredAccuracy: LocationAccuracy.high,
-              timeLimit: const Duration(seconds: 5) // Máximo 5 segundos de espera
-          );
-          latLngStr = "GPS: ${posicion.latitude.toStringAsFixed(6)}, ${posicion.longitude.toStringAsFixed(6)}";
-        } else {
-          latLngStr = "GPS Sin Permiso";
-        }
-      } catch (e) {
-        debugPrint("Error GPS Físico: $e");
-        latLngStr = "GPS No disponible";
-      }
-
-      // 2. Construcción del Sello Unificado
-      String textoSello = "GCT | PLACA: $placa | FECHA: $fechaHora | $latLngStr";
-
-      final bytes = await fotoOriginal.readAsBytes();
-      img.Image? imagen = img.decodeImage(bytes);
-      
-      if (imagen != null) {
-        img.drawString(
-          imagen,
-          textoSello,
-          font: img.arial24,
-          x: 20,
-          y: imagen.height - 40,
-          color: img.ColorRgb8(255, 235, 59), // Amarillo Tránsito/Seguridad para contraste perfecto
-        );
-
-        final directorio = await getTemporaryDirectory();
-        final rutaNueva = '${directorio.path}/sello_fisico_${placa}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-        File archivoModificado = File(rutaNueva);
-        await archivoModificado.writeAsBytes(img.encodeJpg(imagen, quality: 85));
-        
-        return archivoModificado;
-      }
-    } catch (e) {
-      debugPrint("Error aplicando sello en formato papel: $e");
-    }
-    return File(fotoOriginal.path); 
-  }
-
-  // --- FUNCIÓN TOMAR FOTO (ACTUALIZADA CON SELLO E INSERCIÓN SEGURA) ---
+  // --- FUNCIÓN TOMAR FOTO DEL PREOPERACIONAL FÍSICO CON WATERMARK SERVICE ---
   Future<void> _tomarFotoFisico() async {
     if (_subiendoFoto) return;
 
     final ImagePicker picker = ImagePicker();
-    // Forzamos el maxWidth para homologar el tamaño de la imagen y la visualización de la letra
-    final XFile? foto = await picker.pickImage(source: ImageSource.camera, imageQuality: 70, maxWidth: 1200);
+    final XFile? foto = await picker.pickImage(
+      source: ImageSource.camera, 
+      imageQuality: 85, 
+      maxWidth: 1280
+    );
     
     if (foto != null) {
       setState(() => _subiendoFoto = true);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⏳ Aplicando seguridad y subiendo evidencia..."), backgroundColor: Colors.orange));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("⏳ Aplicando marca de agua y subiendo evidencia..."), backgroundColor: Colors.orange)
+      );
 
       try {
-        // Ejecución del Sello Corporativo
-        File archivoFisico = await _aplicarSelloDeAgua(foto);
+        // 1. Obtención de Coordenadas GPS con tiempo límite
+        String latLngStr = "0.0000, 0.0000";
+        try {
+          LocationPermission permiso = await Geolocator.checkPermission();
+          if (permiso == LocationPermission.denied) {
+            permiso = await Geolocator.requestPermission();
+          }
+
+          if (permiso == LocationPermission.whileInUse || permiso == LocationPermission.always) {
+            Position posicion = await Geolocator.getCurrentPosition(
+              desiredAccuracy: LocationAccuracy.high,
+              timeLimit: const Duration(seconds: 5)
+            );
+            latLngStr = "${posicion.latitude.toStringAsFixed(6)}, ${posicion.longitude.toStringAsFixed(6)}";
+          }
+        } catch (e) {
+          debugPrint("Error GPS Físico: $e");
+        }
+
+        // 2. Aplicación de la Marca de Agua Corporativa (Logo GCT + Datos)
+        String placa = (widget.datosServidor['placa_cabezote'] ?? widget.datosServidor['vehiculo'] ?? "S/P")
+            .toString()
+            .toUpperCase()
+            .trim();
+        String fechaHora = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
+
+        File archivoSello = await WatermarkService.aplicarMarcaDeAgua(
+          imagenOriginal: File(foto.path),
+          textoPlaca: placa,
+          textoGPS: latLngStr,
+          fechaHora: fechaHora,
+        );
         
         int driverId = int.tryParse(widget.datosServidor['driver_id']?.toString() ?? "0") ?? 0;
         int tripIdReal = int.tryParse(widget.datosServidor['trip_id']?.toString() ?? "0") ?? 0;
@@ -106,14 +80,16 @@ class _PreoperacionalOpcionesPageState extends State<PreoperacionalOpcionesPage>
         String trailer = widget.datosServidor['placa_trailer']?.toString() ?? "";
         String cabezote = widget.datosServidor['placa_cabezote']?.toString() ?? "";
         
-        // 1. SUBIR FOTO A FIREBASE (Sube el archivo ya sellado)
+        // 3. SUBIR FOTO A FIREBASE STORAGE (preoperacionales_fisicos/)
         String nombreArchivo = "preoperacional_${driverId}_${DateTime.now().millisecondsSinceEpoch}.jpg";
         Reference ref = FirebaseStorage.instance.ref().child('preoperacionales_fisicos/$nombreArchivo');
-        UploadTask uploadTask = ref.putFile(archivoFisico, SettableMetadata(contentType: 'image/jpeg'));
+        
+        final bytes = await archivoSello.readAsBytes();
+        UploadTask uploadTask = ref.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
         TaskSnapshot snapshot = await uploadTask.timeout(const Duration(seconds: 45));
         String urlPublica = await snapshot.ref.getDownloadURL();
 
-        // 2. ARMAR EL JSON CONTROLADOR
+        // 4. ARMAR EL JSON CONTROLADOR
         Map<String, dynamic> jsonPreoperacional = {
           "tipo_registro": "FISICO",
           "fecha_registro": DateTime.now().toIso8601String(),
@@ -121,11 +97,11 @@ class _PreoperacionalOpcionesPageState extends State<PreoperacionalOpcionesPage>
           "comentarios": "Preoperacional físico subido por foto"
         };
 
-        // 3. GUARDAR EN MEMORIA EL JSON Y CAMBIAR LA FASE
+        // 5. GUARDAR EN MEMORIA EL JSON Y CAMBIAR LA FASE
         widget.datosServidor['preoperacional_json'] = jsonEncode(jsonPreoperacional);
         widget.datosServidor['fase_viaje'] = 'PREOP_LISTO'; 
 
-        // 4. ACTUALIZAR LA TORRE DE CONTROL (POSTGRESQL - TRANSACCIONAL SIN REESCRITURAS)
+        // 6. ACTUALIZAR TORRE DE CONTROL (POSTGRESQL)
         final conn = await Connection.open(
           Endpoint(host: 'gctsatelital.com', database: 'app_core', username: 'flutter', password: '5cxkdu6lo', port: 5432),
           settings: const ConnectionSettings(sslMode: SslMode.disable, connectTimeout: Duration(seconds: 15)),
@@ -138,7 +114,7 @@ class _PreoperacionalOpcionesPageState extends State<PreoperacionalOpcionesPage>
             parameters: [tripIdReal, jsonEncode(jsonPreoperacional)],
           );
 
-          // INSERCIÓN DE NUEVA FILA FÍSICA: Evita que se pise y almacena la evidencia de la hoja de forma individual
+          // Inserción individual de la evidencia física
           await session.execute(
              r'''
              INSERT INTO flutter_schema.viajes 
@@ -152,8 +128,8 @@ class _PreoperacionalOpcionesPageState extends State<PreoperacionalOpcionesPage>
                trailer, 
                cabezote, 
                urlPublica, 
-               "0.0000", 
-               "0.0000", 
+               latLngStr.split(',')[0].trim(), 
+               latLngStr.contains(',') ? latLngStr.split(',')[1].trim() : "0.0000", 
                tripIdReal, 
                jsonEncode(jsonPreoperacional)
              ]
@@ -165,7 +141,7 @@ class _PreoperacionalOpcionesPageState extends State<PreoperacionalOpcionesPage>
         if (!mounted) return;
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         
-        // Navegación segura hacia el inicio de ruta
+        // Navegación de retorno al flujo principal
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => ValidacionViajePage(datosServidor: widget.datosServidor)),
@@ -175,7 +151,9 @@ class _PreoperacionalOpcionesPageState extends State<PreoperacionalOpcionesPage>
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("❌ Error en proceso: $e"), backgroundColor: Colors.red));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("❌ Error en proceso: $e"), backgroundColor: Colors.red)
+          );
         }
       } finally {
         if (mounted) setState(() => _subiendoFoto = false);
@@ -183,7 +161,7 @@ class _PreoperacionalOpcionesPageState extends State<PreoperacionalOpcionesPage>
     }
   }
 
-  // Función para abrir el formulario digital
+  // Abrir formulario digital
   void _abrirFormularioDigital() {
     Navigator.pushReplacement(
       context,
@@ -191,9 +169,11 @@ class _PreoperacionalOpcionesPageState extends State<PreoperacionalOpcionesPage>
     );
   }
 
-  // Función para omitir y continuar
+  // Omitir registro preoperacional
   Future<void> _omitirPreoperacional() async {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⏳ Omitiendo y actualizando fase..."), backgroundColor: Colors.orange));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("⏳ Omitiendo y actualizando fase..."), backgroundColor: Colors.orange)
+    );
 
     try {
       int tripIdReal = int.tryParse(widget.datosServidor['trip_id']?.toString() ?? "0") ?? 0;
@@ -229,7 +209,9 @@ class _PreoperacionalOpcionesPageState extends State<PreoperacionalOpcionesPage>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("❌ Error de conexión: $e"), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ Error de conexión: $e"), backgroundColor: Colors.red)
+        );
       }
     }
   }
@@ -271,13 +253,13 @@ class _PreoperacionalOpcionesPageState extends State<PreoperacionalOpcionesPage>
             ),
             const SizedBox(height: 15),
 
-            // OPCIÓN 2: FOTO DEL PAPEL
+            // OPCIÓN 2: FOTO DEL PAPEL FÍSICO
             ElevatedButton.icon(
               onPressed: _subiendoFoto ? null : _tomarFotoFisico,
               icon: _subiendoFoto 
                   ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                   : const Icon(Icons.camera_alt),
-              label: Text(_subiendoFoto ? "Subiendo..." : "📸 Tomar Foto del Papel Físico"),
+              label: Text(_subiendoFoto ? "Procesando Marca de Agua..." : "📸 Tomar Foto del Papel Físico"),
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 15),
                 backgroundColor: Colors.orange[700],

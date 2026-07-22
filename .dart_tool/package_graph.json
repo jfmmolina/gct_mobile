@@ -5,7 +5,7 @@
   "packages": [
     {
       "name": "gct_mobile",
-      "version": "1.0.0+1",
+      "version": "1.0.0+2",
       "dependencies": [
         "barcode_scan2",
         "cupertino_icons",

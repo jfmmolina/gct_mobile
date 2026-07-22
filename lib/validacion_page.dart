@@ -1,17 +1,16 @@
-import 'package:url_launcher/url_launcher.dart';
-import 'preoperacional_opciones_page.dart';
-import 'package:flutter/material.dart';
 import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:postgres/postgres.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart'; 
-import 'package:image/image.dart' as img;
 import 'package:barcode_scan2/barcode_scan2.dart';
 
 import 'main.dart'; 
+import 'preoperacional_opciones_page.dart';
+import 'watermark_service.dart'; // Importamos nuestro servicio unificado
 
 class ValidacionViajePage extends StatefulWidget {
   final Map<String, dynamic> datosServidor; 
@@ -47,78 +46,89 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
         setState(() {
           _guiaController.text = result.rawContent;
         });
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ Código leído"), backgroundColor: Colors.green));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("✅ Código leído"), backgroundColor: Colors.green),
+        );
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("❌ Error escáner: $e"), backgroundColor: Colors.red));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ Error escáner: $e"), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 
-  // --- TOMAR FOTO CON MARCA DE AGUA CORPORATIVA UNIFICADA ---
+  // --- TOMAR FOTO CON MARCA DE AGUA UNIFICADA (WATERMARK SERVICE) ---
   Future<void> _tomarFotoReal() async {
     if (_procesandoFoto) return;
     if (_fotosTomadas >= _limiteFotos) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⚠️ Límite de fotos alcanzado"), backgroundColor: Colors.orange));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("⚠️ Límite de fotos alcanzado"), backgroundColor: Colors.orange),
+      );
       return;
     }
 
     setState(() => _procesandoFoto = true);
 
     try {
-      final ImagePicker picker = ImagePicker();
+      // 1. Obtención de Coordenadas GPS con alta precisión
       LocationPermission permiso = await Geolocator.checkPermission();
       if (permiso == LocationPermission.denied) permiso = await Geolocator.requestPermission(); 
       if (permiso == LocationPermission.whileInUse || permiso == LocationPermission.always) {
-        position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high, timeLimit: const Duration(seconds: 5));
+        position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high, 
+          timeLimit: const Duration(seconds: 5),
+        );
         if (position != null) {
           setState(() {
-            _latitudActual = position!.latitude.toStringAsFixed(6); // Más precisión decimal para GPS
+            _latitudActual = position!.latitude.toStringAsFixed(6);
             _longitudActual = position!.longitude.toStringAsFixed(6);
           });
         }
       }
 
-      final XFile? foto = await picker.pickImage(source: ImageSource.camera, imageQuality: 70, maxWidth: 1200); // Subimos ancho para nitidez del sello
+      // 2. Captura con la cámara
+      final ImagePicker picker = ImagePicker();
+      final XFile? foto = await picker.pickImage(
+        source: ImageSource.camera, 
+        imageQuality: 85, 
+        maxWidth: 1280,
+      );
 
       if (foto != null) {
-        final bytes = await foto.readAsBytes();
-        final directory = await getApplicationDocumentsDirectory();
-        
-        img.Image? imagenDecodificada = img.decodeImage(bytes);
-        if (imagenDecodificada != null) {
-          // Extraemos la información del cabezote garantizando consistencia
-          String placa = (widget.datosServidor['placa_cabezote'] ?? widget.datosServidor['vehiculo'] ?? "S/P").toString().toUpperCase().trim();
-          String fechaHora = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
-          
-          // Formato unificado GCT con Placa visible
-          String textoSello = "GCT | PLACA: $placa | FECHA: $fechaHora | GPS: $_latitudActual, $_longitudActual";
+        File archivoTemp = File(foto.path);
 
-          // Sello de agua mejorado con tipografía clara en la base de la imagen
-          img.drawString(
-            imagenDecodificada, 
-            textoSello, 
-            font: img.arial24, 
-            x: 20, 
-            y: imagenDecodificada.height - 40, 
-            color: img.ColorRgb8(255, 235, 59) // Usamos Amarillo Tránsito/Seguridad para contraste perfecto en exteriores
-          );
-          
-          String nuevoNombre = "GCT_INICIO_${placa}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}_$_fotosTomadas.jpg";
-          String nuevaRuta = "${directory.path}/$nuevoNombre";
-          
-          File archivoFinal = File(nuevaRuta);
-          await archivoFinal.writeAsBytes(img.encodeJpg(imagenDecodificada, quality: 85));
+        // Preparamos los metadatos para la marca de agua
+        String placa = (widget.datosServidor['placa_cabezote'] ?? widget.datosServidor['vehiculo'] ?? "S/P")
+            .toString()
+            .toUpperCase()
+            .trim();
+        String fechaHora = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
+        String gpsTexto = "$_latitudActual, $_longitudActual";
 
-          if (mounted) {
-            setState(() {
-              _listaFotos.add(archivoFinal); 
-              _fotosTomadas++;
-            });
-          }
+        // 3. Procesamos la imagen mediante el WatermarkService (Logo GCT + Sello)
+        File fotoProcesada = await WatermarkService.aplicarMarcaDeAgua(
+          imagenOriginal: archivoTemp,
+          textoPlaca: placa,
+          textoGPS: gpsTexto,
+          fechaHora: fechaHora,
+        );
+
+        if (mounted) {
+          setState(() {
+            _listaFotos.add(fotoProcesada); 
+            _fotosTomadas++;
+          });
         }
       }
     } catch (e) {
-      debugPrint("❌ Error foto: $e");
+      debugPrint("❌ Error procesando foto con marca de agua: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ Error al procesar imagen: $e"), backgroundColor: Colors.red),
+        );
+      }
     } finally {
       if (mounted) setState(() => _procesandoFoto = false);
     }
@@ -145,18 +155,28 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
         widget.datosServidor['fase_viaje'] = 'ACEPTADO';
       });
 
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ Viaje Aceptado. Ya puede registrar el preoperacional."), backgroundColor: Colors.green));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("✅ Viaje Aceptado. Ya puede registrar el preoperacional."), backgroundColor: Colors.green),
+        );
+      }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("❌ Error de conexión: $e"), backgroundColor: Colors.red));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ Error de conexión: $e"), backgroundColor: Colors.red),
+        );
+      }
     } finally {
       if (mounted) setState(() => _procesandoAceptacion = false);
     }
   }
 
-  // --- SUBIR DATOS Y ACTIVAR VIAJE SIN REESCRIBIR FOTOS ---
+  // --- SUBIR DATOS Y ACTIVAR VIAJE ---
   Future<void> _subirEvidencias() async {
     setState(() => _subiendoViaje = true);
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⏳ Guardando evidencia en base de datos..."), backgroundColor: Colors.orange));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("⏳ Guardando evidencia en base de datos..."), backgroundColor: Colors.orange),
+    );
 
     try {
       int tripIdReal = int.tryParse(widget.datosServidor['trip_id']?.toString() ?? "0") ?? 0;
@@ -167,7 +187,7 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
       
       List<String> linksGenerados = []; 
 
-      // 1. Subida ordenada a Firebase Storage
+      // 1. Subida ordenada a Firebase Storage en evidencias_viajes/
       if (_listaFotos.isNotEmpty) {
         for (int i = 0; i < _listaFotos.length; i++) {
           File archivo = _listaFotos[i];
@@ -202,11 +222,15 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
             truck_current_location = $4
           WHERE trip_id = $1
           ''',
-          parameters: [tripIdReal, int.tryParse(_odometroController.text) ?? 0, _guiaController.text, "$_latitudActual,$_longitudActual"],
+          parameters: [
+            tripIdReal, 
+            int.tryParse(_odometroController.text) ?? 0, 
+            _guiaController.text, 
+            "$_latitudActual,$_longitudActual"
+          ],
         );
 
-        // SOLUCIÓN AL REESCRIBIR: Si hay fotos, insertamos un registro único por cada foto tomada.
-        // Si no hay fotos, inserta al menos el registro de texto del viaje.
+        // Registro de evidencias por cada foto tomada
         if (linksGenerados.isNotEmpty) {
           for (String urlFoto in linksGenerados) {
             await session.execute(
@@ -235,7 +259,9 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("✅ ¡VIAJE INICIADO Y EVIdENCIAS GUARDADAS!"), backgroundColor: Colors.green));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("✅ ¡VIAJE INICIADO Y EVIDENCIAS GUARDADAS!"), backgroundColor: Colors.green),
+      );
 
       setState(() {
         _subiendoViaje = false;
@@ -247,7 +273,9 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
       debugPrint("Error al subir: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("❌ Error en guardado: $e"), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ Error en guardado: $e"), backgroundColor: Colors.red),
+        );
         setState(() => _subiendoViaje = false);
       }
     }
@@ -460,14 +488,12 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
                               try {
                                 if (await canLaunchUrl(uri)) {
                                   await launchUrl(uri, mode: LaunchMode.externalApplication);
-                                } else {
-                                  debugPrint("No se pudo abrir la URL: $urlDoc");
                                 }
                               } catch (e) {
                                 debugPrint("Error al abrir PDF: $e");
                               }
                             } else {
-                              if(context.mounted) {
+                              if (context.mounted) {
                                 showDialog(
                                   context: context, 
                                   builder: (context) => AlertDialog(
@@ -520,7 +546,14 @@ class _ValidacionViajePageState extends State<ValidacionViajePage> {
                         if (odoNuevo > odoBaseDatos) {
                           _subirEvidencias();
                         } else {
-                          showDialog(context: context, builder: (context) => AlertDialog(title: const Text("⚠️ Kilometraje Inválido"), content: Text("No puedes iniciar con $odoNuevo. Último: $odoBaseDatos."), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("CORREGIR"))]));
+                          showDialog(
+                            context: context, 
+                            builder: (context) => AlertDialog(
+                              title: const Text("⚠️ Kilometraje Inválido"), 
+                              content: Text("No puedes iniciar con $odoNuevo. Último: $odoBaseDatos."), 
+                              actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("CORREGIR"))]
+                            )
+                          );
                         }
                       }
                     : null, 

@@ -1,14 +1,15 @@
-import 'validacion_page.dart';
-import 'package:flutter/material.dart';
-import 'dart:io';
 import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:postgres/postgres.dart';
 import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:image/image.dart' as img;
-import 'package:path_provider/path_provider.dart';
+
+// Aseguramos el nombre correcto de la vista de validación de inicio
+import 'validacion_page.dart'; 
+import 'watermark_service.dart';
 
 class PreoperacionalFormularioPage extends StatefulWidget {
   final Map<String, dynamic> datosServidor;
@@ -20,7 +21,6 @@ class PreoperacionalFormularioPage extends StatefulWidget {
 }
 
 class _PreoperacionalFormularioPageState extends State<PreoperacionalFormularioPage> {
-  // 11 Preguntas estándar de seguridad
   final List<String> _preguntas = [
     "Estado de llantas y rines",
     "Nivel de aceite y fugas",
@@ -38,7 +38,7 @@ class _PreoperacionalFormularioPageState extends State<PreoperacionalFormularioP
   late Map<int, String> _respuestas;
   final TextEditingController _observacionesController = TextEditingController();
   
-  final List<File> _listaFotos = []; // Manejo directo de archivos locales sellados
+  final List<File> _listaFotos = []; 
   final ImagePicker _picker = ImagePicker();
   bool _enviando = false;
   bool _procesandoFoto = false;
@@ -49,15 +49,20 @@ class _PreoperacionalFormularioPageState extends State<PreoperacionalFormularioP
     _respuestas = {for (var i = 0; i < _preguntas.length; i++) i: 'Bueno'};
   }
   
-  // --- FUNCIÓN BLINDADA Y CONFIGURADA CON PLACA INTEGRAL ---
-  Future<File> _aplicarSelloDeAgua(XFile fotoOriginal) async {
-    try {
-      // Forzamos extracción de placa en mayúsculas sin espacios
-      String placa = (widget.datosServidor['placa_cabezote'] ?? widget.datosServidor['vehiculo'] ?? "S/P").toString().toUpperCase().trim();
-      String fechaHora = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
-      String latLngStr = "Buscando...";
+  // --- TOMAR FOTO DE EVIDENCIA/FALLA CON MARCA DE AGUA CORPORATIVA ---
+  Future<void> _tomarFotoFalla() async {
+    if (_listaFotos.length >= 3) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("⚠️ Máximo 3 fotos de evidencia"))
+      );
+      return;
+    }
+    
+    if (_procesandoFoto) return;
+    setState(() => _procesandoFoto = true);
 
-      // 1. Localización satelital protegida contra bloqueos de hilo
+    try {
+      String latLngStr = "0.0000, 0.0000";
       try {
         LocationPermission permiso = await Geolocator.checkPermission();
         if (permiso == LocationPermission.denied) {
@@ -66,70 +71,46 @@ class _PreoperacionalFormularioPageState extends State<PreoperacionalFormularioP
 
         if (permiso == LocationPermission.whileInUse || permiso == LocationPermission.always) {
           Position posicion = await Geolocator.getCurrentPosition(
-              desiredAccuracy: LocationAccuracy.high,
-              timeLimit: const Duration(seconds: 5)
+            desiredAccuracy: LocationAccuracy.high,
+            timeLimit: const Duration(seconds: 5)
           );
-          latLngStr = "GPS: ${posicion.latitude.toStringAsFixed(6)}, ${posicion.longitude.toStringAsFixed(6)}";
-        } else {
-          latLngStr = "GPS Sin Permiso";
+          latLngStr = "${posicion.latitude.toStringAsFixed(6)}, ${posicion.longitude.toStringAsFixed(6)}";
         }
       } catch (e) {
         debugPrint("Error GPS Preoperacional: $e");
-        latLngStr = "GPS No disponible";
       }
 
-      // 2. Sello con Placa explícita para auditorías corporativas externas
-      String textoSello = "GCT | INSPECCION DIGITAL | PLACA: $placa | FECHA: $fechaHora | $latLngStr";
-
-      final bytes = await fotoOriginal.readAsBytes();
-      img.Image? imagen = img.decodeImage(bytes);
-      
-      if (imagen != null) {
-        img.drawString(
-          imagen,
-          textoSello,
-          font: img.arial24,
-          x: 20,
-          y: imagen.height - 40,
-          color: img.ColorRgb8(255, 235, 59), // Amarillo Tránsito de alta reflectividad para exteriores
-        );
-
-        final directorio = await getTemporaryDirectory();
-        final rutaNueva = '${directorio.path}/falla_${placa}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-        File archivoModificado = File(rutaNueva);
-        await archivoModificado.writeAsBytes(img.encodeJpg(imagen, quality: 85));
-        
-        return archivoModificado;
-      }
-    } catch (e) {
-      debugPrint("Error fatal aplicando sello: $e");
-    }
-    return File(fotoOriginal.path);
-  }
-
-  Future<void> _tomarFotoFalla() async {
-    if (_listaFotos.length >= 3) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⚠️ Máximo 3 fotos de evidencia")));
-      return;
-    }
-    
-    if (_procesandoFoto) return;
-    setState(() => _procesandoFoto = true);
-
-    try {
-      // Subimos a maxWidth 1200 para dar más resolución y evitar que se pise el texto de la marca de agua
-      final XFile? foto = await _picker.pickImage(source: ImageSource.camera, imageQuality: 70, maxWidth: 1200);
+      final XFile? foto = await _picker.pickImage(
+        source: ImageSource.camera, 
+        imageQuality: 85, 
+        maxWidth: 1280
+      );
       
       if (foto != null) {
+        String placa = (widget.datosServidor['placa_cabezote'] ?? widget.datosServidor['vehiculo'] ?? "S/P")
+            .toString()
+            .toUpperCase()
+            .trim();
+        String fechaHora = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
+
+        File fotoSellada = await WatermarkService.aplicarMarcaDeAgua(
+          imagenOriginal: File(foto.path),
+          textoPlaca: placa,
+          textoGPS: latLngStr,
+          fechaHora: fechaHora,
+        );
+
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⏳ Aplicando sello de seguridad corporativo..."), backgroundColor: Colors.orange));
+          setState(() => _listaFotos.add(fotoSellada));
         }
-        
-        File archivoFallaSellada = await _aplicarSelloDeAgua(foto);
-        setState(() => _listaFotos.add(archivoFallaSellada));
       }
     } catch (e) {
       debugPrint("Error capturando foto de falla: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ Error al capturar foto: $e"), backgroundColor: Colors.red)
+        );
+      }
     } finally {
       if (mounted) setState(() => _procesandoFoto = false);
     }
@@ -138,7 +119,9 @@ class _PreoperacionalFormularioPageState extends State<PreoperacionalFormularioP
   // --- FINALIZAR E INSERCIÓN MULTI-REGISTRO EN BASE DE DATOS ---
   Future<void> _finalizarCuestionario() async {
     setState(() => _enviando = true);
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("⏳ Guardando inspección en la nube..."), backgroundColor: Colors.orange));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("⏳ Guardando inspección en la nube..."), backgroundColor: Colors.orange)
+    );
 
     try {
       int tripIdReal = int.tryParse(widget.datosServidor['trip_id']?.toString() ?? "0") ?? 0;
@@ -147,22 +130,20 @@ class _PreoperacionalFormularioPageState extends State<PreoperacionalFormularioP
       String cabezote = widget.datosServidor['placa_cabezote']?.toString() ?? "";
       List<String> urlsFotos = [];
 
-      // 1. SUBIR FOTOS (Ya selladas) A FIREBASE STORAGE
+      // 1. Subida de fotos a Firebase Storage
       for (var i = 0; i < _listaFotos.length; i++) {
         String nombre = "falla_${tripIdReal}_${DateTime.now().millisecondsSinceEpoch}_$i.jpg";
         Reference ref = FirebaseStorage.instance.ref().child('preoperacionales_fisicos/$nombre');
         
-        UploadTask uploadTask = ref.putFile(
-          _listaFotos[i],
-          SettableMetadata(contentType: 'image/jpeg')
-        );
+        final bytes = await _listaFotos[i].readAsBytes();
+        UploadTask uploadTask = ref.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
         
         TaskSnapshot snapshot = await uploadTask.timeout(const Duration(seconds: 45)); 
         String url = await snapshot.ref.getDownloadURL();
         urlsFotos.add(url);
       }
 
-      // 2. CONSTRUIR EL JSON ESTRUCTURADO PARA ACTIVE_TRIPS
+      // 2. Construir JSON
       Map<String, dynamic> jsonFinal = {
         "tipo_registro": "DIGITAL",
         "fecha_registro": DateTime.now().toIso8601String(),
@@ -171,20 +152,18 @@ class _PreoperacionalFormularioPageState extends State<PreoperacionalFormularioP
         "fotos_evidencia": urlsFotos
       };
 
-      // 3. CONEXIÓN E INSERCIÓN TRANSACCIONAL EN POSTGRESQL (SIN REESCRITURA)
+      // 3. Conexión a PostgreSQL
       final conn = await Connection.open(
         Endpoint(host: 'gctsatelital.com', database: 'app_core', username: 'flutter', password: '5cxkdu6lo', port: 5432),
         settings: const ConnectionSettings(sslMode: SslMode.disable, connectTimeout: Duration(seconds: 15)),
       );
 
       await conn.runTx((session) async {
-        // Actualizamos el estado de la tabla de viajes activos
         await session.execute(
           "UPDATE flutter_schema.active_trips SET fase_viaje = 'PREOP_LISTO', fecha_preop_app = CURRENT_TIMESTAMP, preoperacional_data = \$2 WHERE trip_id = \$1",
           parameters: [tripIdReal, jsonEncode(jsonFinal)],
         );
 
-        // EVITAMOS LA REESCRITURA: Insertamos una fila independiente en la tabla general de evidencias por cada foto capturada
         if (urlsFotos.isNotEmpty) {
           for (String urlFotoFalla in urlsFotos) {
             await session.execute(
@@ -212,14 +191,13 @@ class _PreoperacionalFormularioPageState extends State<PreoperacionalFormularioP
 
       await conn.close();
 
-      // 4. ACTUALIZAR MEMORIA LOCAL Y CONTINUAR EL FLUJO
       widget.datosServidor['fase_viaje'] = 'PREOP_LISTO';
       widget.datosServidor['preoperacional_json'] = jsonEncode(jsonFinal);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       
-      // Transición segura sin retorno
+      // Redirección hacia la página de validación (ValidacionViajePage)
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (context) => ValidacionViajePage(datosServidor: widget.datosServidor)),
@@ -228,7 +206,9 @@ class _PreoperacionalFormularioPageState extends State<PreoperacionalFormularioP
 
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("❌ Error subiendo datos: $e"), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ Error subiendo datos: $e"), backgroundColor: Colors.red)
+        );
       }
     } finally {
       if (mounted) setState(() => _enviando = false);
@@ -246,7 +226,6 @@ class _PreoperacionalFormularioPageState extends State<PreoperacionalFormularioP
             const Text("Marque el estado de cada elemento:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 10),
             
-            // Lista de preguntas
             ...List.generate(_preguntas.length, (index) {
               return Card(
                 child: Padding(
@@ -279,7 +258,6 @@ class _PreoperacionalFormularioPageState extends State<PreoperacionalFormularioP
 
             const Divider(height: 40),
 
-            // Sección de Observaciones y Fotos
             const Text("OBSERVACIONES Y EVIDENCIAS", style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
             TextField(
@@ -301,7 +279,7 @@ class _PreoperacionalFormularioPageState extends State<PreoperacionalFormularioP
                   icon: _procesandoFoto 
                       ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                       : const Icon(Icons.camera_alt),
-                  label: Text(_procesandoFoto ? "Procesando..." : "Foto (${_listaFotos.length}/3)"),
+                  label: Text(_procesandoFoto ? "Procesando Marca..." : "Foto (${_listaFotos.length}/3)"),
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.blueGrey, foregroundColor: Colors.white),
                 ),
                 if (_listaFotos.isNotEmpty)
@@ -311,7 +289,6 @@ class _PreoperacionalFormularioPageState extends State<PreoperacionalFormularioP
 
             const SizedBox(height: 30),
             
-            // Botón Final
             SizedBox(
               width: double.infinity, height: 60,
               child: ElevatedButton(
@@ -319,7 +296,7 @@ class _PreoperacionalFormularioPageState extends State<PreoperacionalFormularioP
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.green[700], foregroundColor: Colors.white),
                 child: _enviando 
                   ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text("FINALIZAR E ENVIAR", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  : const Text("FINALIZAR Y ENVIAR", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               ),
             ),
             const SizedBox(height: 20),
