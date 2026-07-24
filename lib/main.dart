@@ -36,6 +36,7 @@ class _LoginPageState extends State<LoginPage> {
   String _mensajeServidor = "Esperando conexión...";
 
   Future<void> _conectarConServidor() async {
+    if (!mounted) return;
     setState(() => _mensajeServidor = "Buscando viaje asignado...");
 
     try {
@@ -95,6 +96,7 @@ class _LoginPageState extends State<LoginPage> {
           'permite_cierre': fila[20]?.toString().trim().toUpperCase() == "TRUE",
         };
 
+        if (!mounted) return;
         setState(() => _mensajeServidor = "¡Viaje encontrado!");
 
         Future.delayed(const Duration(seconds: 1), () {
@@ -102,9 +104,11 @@ class _LoginPageState extends State<LoginPage> {
           Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => ValidacionViajePage(datosServidor: datosReales)));
         });
       } else {
+        if (!mounted) return;
         setState(() => _mensajeServidor = "⚠️ Sin viajes activos.");
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() => _mensajeServidor = "❌ Error de conexión BD.");
       debugPrint("DETALLE ERROR: $e");
     }
@@ -116,7 +120,16 @@ class _LoginPageState extends State<LoginPage> {
       body: Padding(
         padding: const EdgeInsets.all(20.0),
         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          const Icon(Icons.wifi_tethering, size: 80, color: Colors.blue),
+          Image.asset(
+          'assets/logo_gct.png',
+          height: 90,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) => const Icon(
+            Icons.wifi_tethering,
+            size: 80,
+            color: Colors.blue,
+          ),
+        ),
           const Text("GCT MOBILE", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
           const SizedBox(height: 40),
           TextField(controller: _cedulaController, decoration: const InputDecoration(labelText: 'Cédula', border: OutlineInputBorder())),
@@ -183,14 +196,12 @@ class _DashboardPageState extends State<DashboardPage> {
     _webController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.white) 
-      //..setUserAgent("Mozilla/5.0 (Linux; Android 10; SM-G975F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36") // 👈 Disfraz de Chrome
       ..setOnConsoleMessage((JavaScriptConsoleMessage message) {
         debugPrint("🌐 JS DE LA WEB DICE: ${message.message}");
       })
       ..setNavigationDelegate(
         NavigationDelegate(
           onWebResourceError: (WebResourceError error) {
-            // 👈 Espía que imprimirá los errores en la consola de VS Code
             debugPrint("🚨 ERROR DEL MAPA: ${error.description} | Código: ${error.errorCode}");
           },
         ),
@@ -218,11 +229,9 @@ class _DashboardPageState extends State<DashboardPage> {
 
     final diff = fin.difference(ahora);
     
-    // --- AQUÍ ESTÁ TU LÓGICA MAESTRA ---
     String estadoActu = widget.datosViaje['estado_servidor'] ?? "";
     bool permisoManual = widget.datosViaje['permite_cierre'] ?? false;
 
-    // Se libera si: Tiempo agotado O dice "DESCARGA" O tú pusiste TRUE
     bool debeLiberar = diff.isNegative || 
                        estadoActu.contains("DESCARGA") || 
                        permisoManual == true;
@@ -249,12 +258,12 @@ class _DashboardPageState extends State<DashboardPage> {
         final d = json.decode(resp.body);
         if (mounted) {
           setState(() {
-          currentLat = d['lat'];
-          currentLng = d['lng'];
-          sensorName = d['sensor'];
-          velocidad = d['velocidad'];
-          status = d['status'];
-        });
+            currentLat = d['lat'];
+            currentLng = d['lng'];
+            sensorName = d['sensor'];
+            velocidad = d['velocidad'];
+            status = d['status'];
+          });
         }
       }
     } catch (e) { debugPrint("GPS Error: $e"); }
@@ -274,12 +283,11 @@ class _DashboardPageState extends State<DashboardPage> {
           Padding(
             padding: const EdgeInsets.only(right: 8.0),
             child: ElevatedButton.icon(
-              // --- MEJORA 2: ESTILO DEL BOTÓN BLOQUEADO ---
               style: ElevatedButton.styleFrom(
                 backgroundColor: permitirFinalizar ? Colors.redAccent : Colors.grey[400],
                 foregroundColor: Colors.white,
-                disabledBackgroundColor: Colors.black38, // Fondo oscuro cuando está bloqueado
-                disabledForegroundColor: Colors.white,   // Letra blanca cuando está bloqueado
+                disabledBackgroundColor: Colors.black38,
+                disabledForegroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 10)
               ),
               icon: Icon(permitirFinalizar ? Icons.flag : Icons.lock_clock, size: 16),
@@ -298,7 +306,6 @@ class _DashboardPageState extends State<DashboardPage> {
         mainAxisAlignment: MainAxisAlignment.end,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // 1. BOTÓN NUEVO: Registrar Guía en Ruta (Azul)
           FloatingActionButton.small(
             heroTag: "btn_guia",
             onPressed: () {
@@ -312,8 +319,6 @@ class _DashboardPageState extends State<DashboardPage> {
             child: const Icon(Icons.assignment_turned_in),
           ),
           const SizedBox(height: 12),
-
-          // 2. Botón para Recargar el Mapa (Blanco)
           FloatingActionButton.small(
             heroTag: "btn_reload",
             onPressed: () {
@@ -327,8 +332,6 @@ class _DashboardPageState extends State<DashboardPage> {
             child: const Icon(Icons.refresh),
           ),
           const SizedBox(height: 12),
-          
-          // 3. Tu botón rojo de Novedad original (Rojo)
           FloatingActionButton.extended(
             heroTag: "btn_novedad",
             onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => NovedadesPage(datosViaje: widget.datosViaje, lat: currentLat, lng: currentLng))),
@@ -341,44 +344,6 @@ class _DashboardPageState extends State<DashboardPage> {
       body: Stack(
         children: [
           WebViewWidget(controller: _webController),
-          
-          // Positioned(
-          //   top: 12, left: 15, right: 15,
-          //   child: SafeArea(
-          //     child: Card(
-          //       elevation: 10, 
-          //       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)), 
-          //       child: Padding(
-          //         padding: const EdgeInsets.all(15.0), 
-          //         child: Column(
-          //           mainAxisSize: MainAxisSize.min, 
-          //           children: [
-          //             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          //               Text("VIGENCIA (${widget.datosViaje['effective_hours']}h)", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 9, color: Colors.blueGrey)),
-          //               Text(tiempoRestanteTexto, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: colorBarra)),
-          //             ]),
-          //             const SizedBox(height: 10),
-          //             ClipRRect(
-          //               borderRadius: BorderRadius.circular(10),
-          //               child: LinearProgressIndicator(
-          //                 value: porcentajeTiempo,
-          //                 minHeight: 14,
-          //                 backgroundColor: Colors.grey[200],
-          //                 valueColor: AlwaysStoppedAnimation<Color>(colorBarra),
-          //               ),
-          //             ),
-          //             const SizedBox(height: 15),
-          //             Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-          //               _stat("Km/h", "$velocidad"),
-          //               _stat("ID Viaje", "${widget.datosViaje['trip_id']}"),
-          //               _stat("GPS", status.toUpperCase()),
-          //             ]),
-          //           ]
-          //         )
-          //       ),
-          //     ),
-          //   ),
-          // ), 
         ],
       ),
     );

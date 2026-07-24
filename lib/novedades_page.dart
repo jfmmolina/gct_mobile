@@ -99,23 +99,25 @@ class _NovedadesPageState extends State<NovedadesPage> {
             .toString()
             .toUpperCase()
             .trim();
-        String fechaHora = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
-        
-        String coordenadasStr = (_latitudFinal == null) 
-            ? "GPS NO DISPONIBLE" 
+
+        String coordenadasStr = (_latitudFinal == null)
+            ? "${widget.lat}, ${widget.lng}"
             : "$_latitudFinal, $_longitudFinal";
 
+        dynamic tripIdReal = widget.datosViaje['trip_id'] ?? widget.datosViaje['id_viaje'];
+
         // Aplicamos la marca de agua corporativa
-        File fotoProcesada = await WatermarkService.aplicarMarcaDeAgua(
+        File fotoSellada = await WatermarkService.aplicarMarcaDeAgua(
           imagenOriginal: File(photo.path),
-          textoPlaca: placa,
-          textoGPS: coordenadasStr,
-          fechaHora: fechaHora,
+          placa: placa,
+          gps: coordenadasStr,
+          tripId: tripIdReal,
+          tipo: TipoEvidencia.novedadRuta,
         );
 
         if (mounted) {
           setState(() {
-            _fotosNovedad.add(fotoProcesada);
+            _fotosNovedad.add(fotoSellada); // 👈 Usa la variable fotoSellada
           });
         }
       }

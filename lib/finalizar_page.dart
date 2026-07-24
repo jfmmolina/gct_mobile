@@ -48,15 +48,15 @@ class _FinalizarViajePageState extends State<FinalizarViajePage> {
 
       if (photo != null) {
         String placaLimpia = widget.placa.toUpperCase().trim();
-        String fechaHora = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
         String coordenadas = "${widget.currentLat.toStringAsFixed(6)}, ${widget.currentLng.toStringAsFixed(6)}";
 
-        // Aplicamos la marca de agua corporativa con Logo GCT y metadatos
+        // Aplicamos la marca de agua corporativa con Logo GCT y metadatos unificados
         File fotoSellada = await WatermarkService.aplicarMarcaDeAgua(
           imagenOriginal: File(photo.path),
-          textoPlaca: placaLimpia,
-          textoGPS: coordenadas,
-          fechaHora: fechaHora,
+          placa: placaLimpia,
+          gps: coordenadas,
+          tripId: widget.tripId,
+          tipo: TipoEvidencia.cierreViaje, // 👈 Clasifica el sello como Cierre de Viaje
         );
 
         if (mounted) {

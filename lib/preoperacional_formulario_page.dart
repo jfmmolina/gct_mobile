@@ -93,11 +93,16 @@ class _PreoperacionalFormularioPageState extends State<PreoperacionalFormularioP
             .trim();
         String fechaHora = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
 
+        String tripIdActual = widget.datosServidor['trip_id']?.toString() ?? "N/A";
+
+        dynamic tripIdReal = widget.datosServidor['trip_id'] ?? widget.datosServidor['id_viaje'] ?? widget.datosServidor['tripId'];
+
         File fotoSellada = await WatermarkService.aplicarMarcaDeAgua(
           imagenOriginal: File(foto.path),
-          textoPlaca: placa,
-          textoGPS: latLngStr,
-          fechaHora: fechaHora,
+          placa: placa,
+          gps: latLngStr,
+          tripId: tripIdReal, // 👈 Ahora sí recibe el ID real
+          tipo: TipoEvidencia.fallaPreoperacional,
         );
 
         if (mounted) {

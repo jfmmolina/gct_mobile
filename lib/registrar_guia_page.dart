@@ -81,15 +81,19 @@ class _RegistrarGuiaPageState extends State<RegistrarGuiaPage> {
             .toString()
             .toUpperCase()
             .trim();
-        String fechaHora = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
+            
         String gpsTexto = "$_latitudActual, $_longitudActual";
+        dynamic tripIdReal = widget.datosViaje['trip_id'] ?? widget.datosViaje['id_viaje'];
+        String numeroGuiaStr = _guiaController.text.trim(); // 👈 Captura el número de guía digitado por el usuario
 
         // Aplicar marca de agua corporativa
         File fotoProcesada = await WatermarkService.aplicarMarcaDeAgua(
           imagenOriginal: archivoTemp,
-          textoPlaca: placa,
-          textoGPS: gpsTexto,
-          fechaHora: fechaHora,
+          placa: placa,
+          gps: gpsTexto,
+          tripId: tripIdReal,
+          numeroGuia: numeroGuiaStr,
+          tipo: TipoEvidencia.guiaCargue, // 👈 Activa la cinta azul de GUIA DE CARGUE
         );
 
         if (mounted) {

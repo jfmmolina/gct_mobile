@@ -30,20 +30,24 @@ class PoliticasPrivacidadWidget extends StatelessWidget {
       onTap: () => _abrirPoliticas(context),
       borderRadius: BorderRadius.circular(8),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(Icons.shield_outlined, size: 16, color: textColor),
             const SizedBox(width: 6),
-            Text(
-              'Políticas de Privacidad y Términos Legales',
-              style: TextStyle(
-                color: textColor,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                decoration: TextDecoration.underline,
+            Flexible( // <-- Esto evita el overflow en fuentes grandes
+              child: Text(
+                'Políticas de Privacidad y Términos Legales',
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  decoration: TextDecoration.underline,
+                ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 2,
               ),
             ),
           ],
